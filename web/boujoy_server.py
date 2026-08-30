@@ -1734,6 +1734,96 @@ class BoujoyHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": f"导出失败: {exc}"}
 
+    def _kernel_file_graph(self, file_frag: str, limit: int = 220) -> dict[str, Any]:
+        """同一文件视图：列出文件内所有函数，并保留它们之间的直接调用边。"""
+        import sqlite3
+        db = r"D:\claude配置\kernel-graph\linux7.2rc6.db"
+        if not os.path.isfile(db):
+            return {"ok": False, "error": f"kernel-graph 数据库不存在: {db}"}
+        if not file_frag or not file_frag.strip():
+            return {"ok": False, "error": "缺少 file 参数"}
+        try:
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("PRAGMA query_only = ON")
+                cur = conn.cursor()
+                funcs = cur.execute(
+                    "SELECT name, file, line FROM functions WHERE file LIKE ? ORDER BY line LIMIT ?",
+                    (f"%{file_frag.strip()}%", limit),
+                ).fetchall()
+                if not funcs:
+                    return {"ok": False, "error": f"未找到包含 {file_frag} 的文件"}
+                names = [f[0] for f in funcs]
+                name_set = set(names)
+                nodes = {n: {"id": n, "name": n, "file": f, "line": l, "depth": 1} for n, f, l in funcs}
+                links: list[dict[str, str]] = []
+                seen_edges = set()
+                for name in names:
+                    for callee, in cur.execute(
+                        "SELECT DISTINCT callee FROM calls WHERE caller = ? LIMIT 120", (name,)
+                    ).fetchall():
+                        if callee in name_set and (name, callee) not in seen_edges:
+                            seen_edges.add((name, callee))
+                            links.append({"source": name, "target": callee})
+                return {
+                    "ok": True,
+                    "file": funcs[0][1],
+                    "root": None,
+                    "symbol": file_frag.strip(),
+                    "nodes": list(nodes.values()),
+                    "links": links,
+                    "capped": len(funcs) >= limit,
+                }
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"同文件视图查询失败: {exc}"}
+
+    def _kernel_indirect(self, symbol: str) -> dict[str, Any]:
+        """间接调用分析：X 被赋值到哪些函数指针字段 → 这些字段声明在哪些结构体 →
+        同一槽位还有哪些回调函数（可能被同一调用点间接调用）。"""
+        import sqlite3
+        db = r"D:\claude配置\kernel-graph\linux7.2rc6.db"
+        if not os.path.isfile(db):
+            return {"ok": False, "error": f"kernel-graph 数据库不存在: {db}"}
+        try:
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("PRAGMA query_only = ON")
+                cur = conn.cursor()
+                name = symbol.strip()
+                fields = [r[0] for r in cur.execute(
+                    """SELECT DISTINCT fa.field FROM field_assignments fa
+                       WHERE fa.function = ? AND EXISTS (
+                           SELECT 1 FROM structs s WHERE s.field = fa.field AND s.is_func_ptr = 1
+                       ) LIMIT 30""", (name,)
+                ).fetchall()]
+                nodes: dict[str, dict[str, Any]] = {}
+                links: list[dict[str, Any]] = []
+                nodes[name] = {"id": name, "name": name, "kind": "function", "root": True}
+                for field in fields:
+                    fid = f"field:{field}"
+                    if fid not in nodes:
+                        nodes[fid] = {"id": fid, "name": field, "kind": "field", "isFuncPtr": True}
+                    links.append({"source": name, "target": fid, "kind": "assign"})
+                    for st, in cur.execute(
+                        "SELECT DISTINCT struct_name FROM structs WHERE field = ? AND is_func_ptr = 1 LIMIT 5", (field,)
+                    ).fetchall():
+                        if st not in nodes:
+                            nodes[st] = {"id": st, "name": st, "kind": "struct"}
+                        links.append({"source": fid, "target": st, "kind": "declared"})
+                    for sib, in cur.execute(
+                        "SELECT DISTINCT function FROM field_assignments WHERE field = ? AND function != ? LIMIT 10", (field, name)
+                    ).fetchall():
+                        if sib not in nodes:
+                            nodes[sib] = {"id": sib, "name": sib, "kind": "function"}
+                        links.append({"source": fid, "target": sib, "kind": "sibling"})
+                return {"ok": True, "symbol": name, "root": name, "nodes": list(nodes.values()), "links": links}
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"间接调用分析失败: {exc}"}
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
@@ -2042,6 +2132,16 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             limit = int(query.get("limit", ["50"])[0] or "50")
             self._json(self._kernel_hot(limit))
+            return
+        if path == "/api/kernel/filegraph":
+            query = urllib.parse.parse_qs(parsed.query)
+            file = query.get("file", [""])[0].strip()
+            self._json(self._kernel_file_graph(file))
+            return
+        if path == "/api/kernel/indirect":
+            query = urllib.parse.parse_qs(parsed.query)
+            symbol = query.get("symbol", [""])[0].strip()
+            self._json(self._kernel_indirect(symbol))
             return
         match = re.fullmatch(r"/api/harness/(knowledge|clean)/(events\.mux|events\.host)", path)
         if match:

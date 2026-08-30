@@ -3369,11 +3369,16 @@ function bindEvents() {
   });
   $("#kernelGraphGo").addEventListener("click", queryKernelGraph);
   $("#kernelGraphQuery").addEventListener("keydown", event => { if (event.key === "Enter") queryKernelGraph(); });
-  $("#kgModeRadial").addEventListener("click", () => setKernelGraphMode("radial"));
-  $("#kgModeChain").addEventListener("click", () => setKernelGraphMode("chain"));
-  $("#kgModePath").addEventListener("click", () => setKernelGraphMode("path"));
-  $("#kgModeStruct").addEventListener("click", () => setKernelGraphMode("struct"));
-  $("#kgModeHot").addEventListener("click", () => setKernelGraphMode("hot"));
+  $("#kernelGraphModeSelect").addEventListener("change", event => setKernelGraphMode(event.target.value));
+  $("#kernelGraphFilter").addEventListener("input", event => {
+    const v = event.target.value.trim();
+    kernelFilterRegex = v ? new RegExp(v, "i") : null;
+    reapplyKernelFilter();
+  });
+  $("#kernelHideLow").addEventListener("change", event => {
+    kernelHideLow = event.target.checked;
+    reapplyKernelFilter();
+  });
   $("#kernelGraphExpand").addEventListener("click", expandKernelGraph);
   $("#kernelGraphExport").addEventListener("click", exportKernelGraph);
   $("#kernelGraphBack").addEventListener("click", kernelGraphGoBack);
@@ -3511,15 +3516,16 @@ function updateKernelGraphNav() {
 
 function setKernelGraphMode(mode) {
   kernelGraphMode = mode;
-  const modes = ["radial", "chain", "path", "struct", "hot"];
-  modes.forEach(m => {
-    $(`#kgMode${m[0].toUpperCase()}${m.slice(1)}`)?.classList.toggle("active", mode === m);
-  });
-  $("#kernelGraphDepth")?.classList.toggle("hidden", mode !== "radial");
+  const sel = $("#kernelGraphModeSelect");
+  if (sel) sel.value = mode;
+  const usesDepth = mode === "radial" || mode === "compare";
+  const usesDst = mode === "path" || mode === "compare";
+  const usesExpand = mode === "radial" || mode === "file";
+  $("#kernelGraphDepth")?.classList.toggle("hidden", !usesDepth);
   $("#kernelChainDir")?.classList.toggle("hidden", mode !== "chain");
   $("#kernelChainDepth")?.classList.toggle("hidden", mode !== "chain");
-  $("#kernelPathDst")?.classList.toggle("hidden", mode !== "path");
-  $("#kernelGraphExpand")?.classList.toggle("hidden", mode !== "radial");
+  $("#kernelPathDst")?.classList.toggle("hidden", !usesDst);
+  $("#kernelGraphExpand")?.classList.toggle("hidden", !usesExpand);
   $("#kernelGraphExport")?.classList.toggle("hidden", mode === "hot");
   if ($("#kernelGraphQuery")) {
     const hints = {
@@ -3528,9 +3534,26 @@ function setKernelGraphMode(mode) {
       path: "起点函数，如 do_fork",
       struct: "输入结构体或函数名，如 task_struct",
       hot: "内核最热函数排行（无需输入，直接查询）",
+      file: "输入文件片段，如 core.c / sched/fair.c",
+      indirect: "输入函数名，分析函数指针间接调用",
+      compare: "第一个函数（第二个填右侧框）",
     };
     $("#kernelGraphQuery").placeholder = hints[mode] || "";
+    $("#kernelPathDst").placeholder = mode === "compare" ? "第二个函数" : "目标函数";
   }
+}
+
+let kernelFilterRegex = null;
+let kernelHideLow = false;
+let kernelLastResult = null; // {mode, data} 最近渲染结果（过滤重渲染用）
+
+function reapplyKernelFilter() {
+  if (!kernelLastResult) return;
+  const canvas = $("#kernelGraphCanvas");
+  const r = kernelLastResult;
+  if (r.mode === "compare" && r.left) renderKernelCompareSVG(canvas, r.left, r.right);
+  else if (r.mode === "radial" || r.mode === "file") renderKernelGraphSVG(canvas, r.data);
+  else if (r.mode === "struct" || r.mode === "indirect") renderKernelStructSVG(canvas, r.data);
 }
 
 function renderKernelLinearChain(canvas, items, metaText, onNodeClick) {
@@ -3696,7 +3719,8 @@ function renderKernelStructSVG(canvas, data) {
   node.on("click", (ev, d) => {
     ev.stopPropagation();
     $("#kernelGraphQuery").value = d.name;
-    queryKernelStruct();
+    queryKernelGraph();
+    showKernelNodeDetail(d.name);
   });
   sim.on("tick", () => {
     link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
@@ -3718,6 +3742,7 @@ async function queryKernelStruct() {
     if (!data?.ok) { canvas.innerHTML = `<p class="muted">${escapeHtml(data?.error || "查询失败")}</p>`; return; }
     currentKernelGraph = data;
     renderKernelStructSVG(canvas, data);
+    kernelLastResult = { mode: "struct", data };
     kernelGraphRemember();
   } catch (error) {
     canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
@@ -3844,21 +3869,107 @@ async function exportKernelGraph() {
   }
 }
 
-function renderKernelGraphSVG(canvas, data) {
+async function queryKernelFileGraph() {
+  kernelGraphNoteHistory();
+  const canvas = $("#kernelGraphCanvas");
+  const file = ($("#kernelGraphQuery").value || "").trim();
+  if (!file) { canvas.innerHTML = '<p class="muted">请输入文件片段，如 core.c / sched/fair.c。</p>'; return; }
+  canvas.innerHTML = '<p class="muted">正在构建文件关系网…</p>';
+  try {
+    const data = await jsonFetch(`/api/kernel/filegraph?file=${encodeURIComponent(file)}`, { cache: "no-store" });
+    if (!data?.ok) { canvas.innerHTML = `<p class="muted">${escapeHtml(data?.error || "查询失败")}</p>`; return; }
+    currentKernelGraph = data;
+    renderKernelGraphSVG(canvas, data);
+    kernelLastResult = { mode: "file", data };
+    kernelGraphRemember();
+  } catch (error) {
+    canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function queryKernelIndirect() {
+  kernelGraphNoteHistory();
+  const canvas = $("#kernelGraphCanvas");
+  const symbol = ($("#kernelGraphQuery").value || "").trim();
+  if (!symbol) { canvas.innerHTML = '<p class="muted">请输入函数名。</p>'; return; }
+  canvas.innerHTML = '<p class="muted">分析函数指针间接调用…</p>';
+  try {
+    const data = await jsonFetch(`/api/kernel/indirect?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+    if (!data?.ok) { canvas.innerHTML = `<p class="muted">${escapeHtml(data?.error || "查询失败")}</p>`; return; }
+    currentKernelGraph = data;
+    renderKernelStructSVG(canvas, data);
+    kernelLastResult = { mode: "indirect", data };
+    kernelGraphRemember();
+  } catch (error) {
+    canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function renderKernelCompareSVG(canvas, left, right) {
+  canvas.innerHTML = "";
+  const meta = document.createElement("div");
+  meta.className = "kernel-graph-meta";
+  meta.textContent = `${left.root || "A"}  vs  ${right.root || "B"}（同深度对比）`;
+  canvas.appendChild(meta);
+  const grid = document.createElement("div");
+  grid.className = "kernel-compare-grid";
+  canvas.appendChild(grid);
+  const renderSide = (data, title) => {
+    const col = document.createElement("div");
+    col.className = "kernel-compare-col";
+    const titleEl = document.createElement("div");
+    titleEl.className = "kernel-compare-title";
+    titleEl.textContent = title;
+    col.appendChild(titleEl);
+    const sub = document.createElement("div");
+    sub.className = "kernel-compare-canvas";
+    col.appendChild(sub);
+    grid.appendChild(col);
+    renderKernelGraphSVG(sub, data, { append: true });
+  };
+  renderSide(left, left.root || "A");
+  renderSide(right, right.root || "B");
+}
+
+async function queryKernelCompare() {
+  kernelGraphNoteHistory();
+  const canvas = $("#kernelGraphCanvas");
+  const a = ($("#kernelGraphQuery").value || "").trim();
+  const b = ($("#kernelPathDst").value || "").trim();
+  if (!a || !b) { canvas.innerHTML = '<p class="muted">请输入两个函数（第一个在输入框，第二个在右侧框）。</p>'; return; }
+  const depth = $("#kernelGraphDepth")?.value || "2";
+  canvas.innerHTML = '<p class="muted">对比中…</p>';
+  try {
+    const [ra, rb] = await Promise.all([
+      jsonFetch(`/api/kernel/graph?symbol=${encodeURIComponent(a)}&depth=${depth}`, { cache: "no-store" }),
+      jsonFetch(`/api/kernel/graph?symbol=${encodeURIComponent(b)}&depth=${depth}`, { cache: "no-store" }),
+    ]);
+    if (!ra?.ok || !rb?.ok) { canvas.innerHTML = `<p class="muted">${escapeHtml((ra?.error || rb?.error) || "查询失败")}</p>`; return; }
+    currentKernelGraph = { nodes: [...(ra.nodes || []), ...(rb.nodes || [])], links: [...(ra.links || []), ...(rb.links || [])], symbol: `${a} vs ${b}`, mode: "compare" };
+    renderKernelCompareSVG(canvas, ra, rb);
+    kernelLastResult = { mode: "compare", left: ra, right: rb };
+    kernelGraphRemember();
+  } catch (error) {
+    canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function renderKernelGraphSVG(canvas, data, opts = {}) {
   if (!window.d3) { canvas.innerHTML = '<p class="muted">d3 未加载（vendor/d3.min.js 缺失）</p>'; return; }
   const width = Math.max(canvas.clientWidth || 900, 480);
   const height = 540;
-  canvas.innerHTML = "";
+  if (!opts.append) canvas.innerHTML = "";
 
-  const legend = document.createElement("div");
-  legend.className = "kernel-graph-legend";
-  legend.innerHTML = `<span><i style="background:var(--acid)"></i>根</span><span><i style="background:var(--blue)"></i>1 层</span><span><i style="background:var(--cyan)"></i>2 层</span><span><i style="background:var(--pink)"></i>3 层</span>`;
-  canvas.appendChild(legend);
-
-  const meta = document.createElement("div");
-  meta.className = "kernel-graph-meta";
-  meta.textContent = `${data.nodes.length} 节点 · ${data.links.length} 边 · 深度 ${data.depth}${data.capped ? " · ⚠ 已达显示上限，部分节点省略（建议降低深度）" : ""}`;
-  canvas.appendChild(meta);
+  if (!opts.append) {
+    const legend = document.createElement("div");
+    legend.className = "kernel-graph-legend";
+    legend.innerHTML = `<span><i style="background:var(--acid)"></i>根</span><span><i style="background:var(--blue)"></i>1 层</span><span><i style="background:var(--cyan)"></i>2 层</span><span><i style="background:var(--pink)"></i>3 层</span>`;
+    canvas.appendChild(legend);
+    const meta = document.createElement("div");
+    meta.className = "kernel-graph-meta";
+    meta.textContent = `${data.nodes.length} 节点 · ${data.links.length} 边 · 深度 ${data.depth || "-"}${data.capped ? " · ⚠ 已达显示上限，部分节点省略（建议降低深度）" : ""}`;
+    canvas.appendChild(meta);
+  }
 
   const wrap = document.createElement("div");
   wrap.className = "kernel-graph-wrap";
@@ -3867,8 +3978,18 @@ function renderKernelGraphSVG(canvas, data) {
   const svg = d3.select(wrap).append("svg").attr("width", "100%").attr("height", height).attr("viewBox", `0 0 ${width} ${height}`);
   const g = svg.append("g");
   svg.call(d3.zoom().scaleExtent([0.15, 5]).on("zoom", (ev) => g.attr("transform", ev.transform)));
-  const nodes = data.nodes.map(n => ({ ...n }));
-  const links = data.links.map((l, i) => ({ source: l.source, target: l.target, id: i, file: l.file, line: l.line }));
+  let nodes = data.nodes.map(n => ({ ...n }));
+  let links = data.links.map((l, i) => ({ source: l.source, target: l.target, id: i, file: l.file, line: l.line }));
+  // 度数（过滤用）
+  const degree = {};
+  links.forEach(l => { degree[l.source] = (degree[l.source] || 0) + 1; degree[l.target] = (degree[l.target] || 0) + 1; });
+  nodes.forEach(n => { n.linkCount = degree[n.id] || 0; });
+  // 隐藏低度节点
+  if (kernelHideLow) {
+    nodes = nodes.filter(n => (degree[n.id] || 0) >= 3 || n.root);
+    const vis = new Set(nodes.map(n => n.id));
+    links = links.filter(l => vis.has(l.source) && vis.has(l.target));
+  }
   const depthColor = { 0: "var(--acid)", 1: "var(--blue)", 2: "var(--cyan)", 3: "var(--pink)" };
   const sim = d3.forceSimulation(nodes)
     .force("link", d3.forceLink(links).id(d => d.id).distance(d => d.source.root || d.target.root ? 110 : 85))
@@ -3884,7 +4005,8 @@ function renderKernelGraphSVG(canvas, data) {
   node.append("circle")
     .attr("r", d => d.root ? 15 : (d.linkCount > 8 ? 11 : 8))
     .attr("fill", d => d.root ? depthColor[0] : (depthColor[d.depth] || "#64748b"))
-    .attr("stroke", "var(--ink)").attr("stroke-width", 2);
+    .attr("stroke", d => (kernelFilterRegex && kernelFilterRegex.test(d.name)) ? "var(--pink)" : "var(--ink)")
+    .attr("stroke-width", d => (kernelFilterRegex && kernelFilterRegex.test(d.name)) ? 3 : 2);
   node.append("text").text(d => d.name)
     .attr("x", d => (d.root ? 20 : 14)).attr("y", 4)
     .attr("font-size", d => d.root ? 13 : 11)
@@ -3892,9 +4014,13 @@ function renderKernelGraphSVG(canvas, data) {
     .attr("fill", "currentColor")
     .style("paint-order", "stroke").style("stroke", "var(--panel-solid)").style("stroke-width", 3);
   node.append("title").text(d => `${d.name}\n${d.file}:${d.line}${d.root ? "\n（根节点）" : `\n（${d.depth} 层）`}\n点击以该节点为中心重查`);
+  if (kernelFilterRegex) {
+    node.style("opacity", d => kernelFilterRegex.test(d.name) ? 1 : 0.15);
+  }
   node.on("click", (ev, d) => {
     ev.stopPropagation();
     $("#kernelGraphQuery").value = d.name;
+    if (kernelGraphMode === "file") setKernelGraphMode("radial");
     queryKernelGraph();
     showKernelNodeDetail(d.name);
   });
@@ -3912,6 +4038,9 @@ async function queryKernelGraph() {
   if (kernelGraphMode === "path") return queryKernelPath();
   if (kernelGraphMode === "struct") return queryKernelStruct();
   if (kernelGraphMode === "hot") return loadKernelHot();
+  if (kernelGraphMode === "file") return queryKernelFileGraph();
+  if (kernelGraphMode === "indirect") return queryKernelIndirect();
+  if (kernelGraphMode === "compare") return queryKernelCompare();
   kernelGraphNoteHistory();
   const canvas = $("#kernelGraphCanvas");
   const symbol = ($("#kernelGraphQuery").value || "").trim();
@@ -3929,6 +4058,7 @@ async function queryKernelGraph() {
     data.nodes.forEach(n => { n.linkCount = degree[n.id] || 0; });
     renderKernelGraphSVG(canvas, data);
     showKernelNodeDetail(data.root || data.symbol);
+    kernelLastResult = { mode: "radial", data };
     kernelGraphRemember();
   } catch (error) {
     canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;

@@ -283,15 +283,18 @@
 
         <div class="kernel-graph-panel">
           <div class="kernel-graph-toolbar">
-            <div class="kg-mode-switch">
-              <button id="kgModeRadial" class="kg-mode active" type="button">径向图谱</button>
-              <button id="kgModeChain" class="kg-mode" type="button">深链追踪</button>
-              <button id="kgModePath" class="kg-mode" type="button">最短路径</button>
-              <button id="kgModeStruct" class="kg-mode" type="button">结构体</button>
-              <button id="kgModeHot" class="kg-mode" type="button">热函数</button>
-            </div>
+            <select id="kernelGraphModeSelect" class="inline-select kg-mode-select" aria-label="模式">
+              <option value="radial" selected>径向图谱</option>
+              <option value="chain">深链追踪</option>
+              <option value="path">最短路径</option>
+              <option value="struct">结构体</option>
+              <option value="hot">热函数</option>
+              <option value="file">同文件</option>
+              <option value="indirect">间接调用</option>
+              <option value="compare">双函数对比</option>
+            </select>
             <input id="kernelGraphQuery" type="text" placeholder="输入函数名查询调用图谱，如 __schedule / pick_next_task" spellcheck="false">
-            <input id="kernelPathDst" type="text" placeholder="目标函数" spellcheck="false" class="hidden">
+            <input id="kernelPathDst" type="text" placeholder="目标函数 / 第二个函数" spellcheck="false" class="hidden">
             <select id="kernelGraphDepth" class="inline-select" aria-label="深度">
               <option value="1">1 层</option><option value="2" selected>2 层</option><option value="3">3 层</option>
             </select>
@@ -307,6 +310,10 @@
             <span class="kg-nav-spacer"></span>
             <button id="kernelGraphBack" class="mini-cut kg-nav" type="button" disabled title="后退（历史查询）">←</button>
             <button id="kernelGraphForward" class="mini-cut kg-nav" type="button" disabled title="前进">→</button>
+          </div>
+          <div class="kernel-graph-filter">
+            <input id="kernelGraphFilter" type="text" placeholder="过滤正则（高亮匹配，如 sched|task）" spellcheck="false">
+            <label class="kg-filter-low"><input type="checkbox" id="kernelHideLow"> 隐藏低度节点</label>
           </div>
           <div id="kernelNodeDetail" class="kernel-node-detail hidden"></div>
           <div id="kernelGraphCanvas" class="kernel-graph-canvas"><p class="muted">输入函数名，从 kernel-graph 数据库（420 万条调用边）查询调用关系。</p></div>
