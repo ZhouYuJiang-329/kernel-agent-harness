@@ -1294,3 +1294,8 @@ html[data-theme="dark"] .page-kernel-dash {
 .kernel-graph-meta { padding: 6px 12px 0; font: 700 10px var(--mono); color: var(--muted); }
 .kernel-graph-wrap { position: relative; }
 .kernel-graph-wrap svg { display: block; }
+
+.kg-mode-switch { display: flex; border: 2px solid color-mix(in srgb, currentColor 55%, transparent); }
+.kg-mode { padding: 9px 14px; background: transparent; color: inherit; border: 0; font: 900 11px var(--display); cursor: pointer; }
+.kg-mode.active { color: var(--ink); background: var(--acid); }
+.kg-mode:first-child { border-right: 2px solid color-mix(in srgb, currentColor 55%, transparent); }

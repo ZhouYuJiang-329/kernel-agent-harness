@@ -3369,6 +3369,8 @@ function bindEvents() {
   });
   $("#kernelGraphGo").addEventListener("click", queryKernelGraph);
   $("#kernelGraphQuery").addEventListener("keydown", event => { if (event.key === "Enter") queryKernelGraph(); });
+  $("#kgModeRadial").addEventListener("click", () => setKernelGraphMode("radial"));
+  $("#kgModeChain").addEventListener("click", () => setKernelGraphMode("chain"));
   $("#graphCanvas").addEventListener("click", event => { const node = event.target.closest("[data-graph-path]"); if (node) { $("#graphDialog").close(); openReader(node.dataset.graphPath); } });
   $("#healthDetails").addEventListener("click", event => { if (event.target.closest("[data-cleanup-all]")) cleanupReported(); });
   $("#addExpertButton").addEventListener("click", () => openRecordDialog("expert"));
@@ -3440,6 +3442,110 @@ function monitorSessionLabel() {
   return session ? sessionTitle(session) : "未选择会话";
 }
 
+let kernelGraphMode = "radial";
+
+function setKernelGraphMode(mode) {
+  kernelGraphMode = mode;
+  $("#kgModeRadial")?.classList.toggle("active", mode === "radial");
+  $("#kgModeChain")?.classList.toggle("active", mode === "chain");
+  $("#kernelGraphDepth")?.classList.toggle("hidden", mode !== "radial");
+  $("#kernelChainDir")?.classList.toggle("hidden", mode !== "chain");
+  $("#kernelChainDepth")?.classList.toggle("hidden", mode !== "chain");
+  if ($("#kernelGraphQuery")) {
+    $("#kernelGraphQuery").placeholder = mode === "radial"
+      ? "输入函数名查询调用图谱，如 __schedule / pick_next_task"
+      : "输入函数名追踪主调用链，如 enqueue_task_fair";
+  }
+}
+
+function renderKernelChainSVG(canvas, data) {
+  const chain = data.chain || [];
+  if (!chain.length) { canvas.innerHTML = '<p class="muted">空调用链。</p>'; return; }
+  const width = Math.max(canvas.clientWidth || 900, 480);
+  const nodeH = 46, gap = 16, top = 14;
+  const height = Math.max(chain.length * (nodeH + gap) + top + 20, 220);
+  canvas.innerHTML = "";
+
+  const meta = document.createElement("div");
+  meta.className = "kernel-graph-meta";
+  meta.textContent = `${chain.length} 层调用链 · ${data.direction === "up" ? "向上（调用者）" : "向下（被调用者）"}${data.stopped ? " · 已到达链尾" : ` · 已达 ${data.depth} 层上限`}`;
+  canvas.appendChild(meta);
+
+  const wrap = document.createElement("div");
+  wrap.className = "kernel-graph-wrap";
+  canvas.appendChild(wrap);
+
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("height", height);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const depthColor = ["#d2ff00", "#2439ff", "#32e4d2", "#ff2b8b", "#ffd629", "#a78bfa", "#f472b6", "#34d399", "#fb923c", "#60a5fa", "#facc15", "#c084fc", "#94a3b8"];
+  chain.forEach((n, i) => {
+    const y = top + i * (nodeH + gap);
+    const color = depthColor[Math.min(n.level, depthColor.length - 1)];
+    if (i > 0) {
+      const line = document.createElementNS(NS, "line");
+      line.setAttribute("x1", 30); line.setAttribute("y1", y - gap);
+      line.setAttribute("x2", 30); line.setAttribute("y2", y - 2);
+      line.setAttribute("stroke", "rgba(255,255,255,.35)"); line.setAttribute("stroke-width", 2);
+      svg.appendChild(line);
+      const arrow = document.createElementNS(NS, "polygon");
+      arrow.setAttribute("points", "24," + (y - 6) + " 36," + (y - 6) + " 30," + (y + 2));
+      arrow.setAttribute("fill", color);
+      svg.appendChild(arrow);
+    }
+    const g = document.createElementNS(NS, "g");
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("x", 10); rect.setAttribute("y", y);
+    rect.setAttribute("width", width - 20); rect.setAttribute("height", nodeH);
+    rect.setAttribute("rx", 8);
+    rect.setAttribute("fill", "rgba(13,16,21,.85)");
+    rect.setAttribute("stroke", color);
+    rect.setAttribute("stroke-width", n.level === 0 ? 3 : 1.5);
+    g.appendChild(rect);
+    const chip = document.createElementNS(NS, "circle");
+    chip.setAttribute("cx", 32); chip.setAttribute("cy", y + nodeH / 2); chip.setAttribute("r", 10);
+    chip.setAttribute("fill", color);
+    g.appendChild(chip);
+    const num = document.createElementNS(NS, "text");
+    num.setAttribute("x", 32); num.setAttribute("y", y + nodeH / 2 + 4);
+    num.setAttribute("text-anchor", "middle"); num.setAttribute("font-size", 10); num.setAttribute("font-weight", 900);
+    num.setAttribute("fill", "#0a0b0d");
+    num.textContent = n.level;
+    g.appendChild(num);
+    const name = document.createElementNS(NS, "text");
+    name.setAttribute("x", 52); name.setAttribute("y", y + 19);
+    name.setAttribute("font-size", 13); name.setAttribute("font-weight", n.level === 0 ? 900 : 600);
+    name.setAttribute("fill", "currentColor");
+    name.textContent = n.name;
+    g.appendChild(name);
+    const loc = document.createElementNS(NS, "text");
+    loc.setAttribute("x", 52); loc.setAttribute("y", y + nodeH - 10);
+    loc.setAttribute("font-size", 10); loc.setAttribute("fill", "#8f928f");
+    loc.textContent = `${n.file}:${n.line}`;
+    g.appendChild(loc);
+    svg.appendChild(g);
+  });
+  wrap.appendChild(svg);
+}
+
+async function queryKernelChain() {
+  const canvas = $("#kernelGraphCanvas");
+  const symbol = ($("#kernelGraphQuery").value || "").trim();
+  if (!symbol) { canvas.innerHTML = '<p class="muted">请输入函数名。</p>'; return; }
+  const dir = $("#kernelChainDir")?.value || "down";
+  const depth = $("#kernelChainDepth")?.value || "8";
+  canvas.innerHTML = '<p class="muted">正在追踪调用链…</p>';
+  try {
+    const data = await jsonFetch(`/api/kernel/chain?symbol=${encodeURIComponent(symbol)}&dir=${dir}&depth=${depth}`, { cache: "no-store" });
+    if (!data?.ok) { canvas.innerHTML = `<p class="muted">${escapeHtml(data?.error || "查询失败")}</p>`; return; }
+    renderKernelChainSVG(canvas, data);
+  } catch (error) {
+    canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
 function renderKernelGraphSVG(canvas, data) {
   if (!window.d3) { canvas.innerHTML = '<p class="muted">d3 未加载（vendor/d3.min.js 缺失）</p>'; return; }
   const width = Math.max(canvas.clientWidth || 900, 480);
@@ -3498,6 +3604,7 @@ function renderKernelGraphSVG(canvas, data) {
 }
 
 async function queryKernelGraph() {
+  if (kernelGraphMode === "chain") return queryKernelChain();
   const canvas = $("#kernelGraphCanvas");
   const symbol = ($("#kernelGraphQuery").value || "").trim();
   if (!symbol) { canvas.innerHTML = '<p class="muted">请输入函数名。</p>'; return; }

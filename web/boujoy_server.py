@@ -1434,6 +1434,80 @@ class BoujoyHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001 — 网关边界，返回错误 JSON
             return {"ok": False, "error": f"kernel-graph 查询失败: {exc}"}
 
+    def _kernel_chain(self, symbol: str, direction: str = "down", depth: int = 8) -> dict[str, Any]:
+        """深链追踪：沿一条主路径向下（callees）或向上（callers）走到底。
+
+        每层选主路径的启发式：同文件优先（保持子系统主路径）→ 自身调用最多的
+        （中心性最高）→ 未访问过的第一个。深度上限 12，防环。
+        """
+        import sqlite3
+        db = r"D:\claude配置\kernel-graph\linux7.2rc6.db"
+        if not os.path.isfile(db):
+            return {"ok": False, "error": f"kernel-graph 数据库不存在: {db}"}
+        if not symbol or not symbol.strip():
+            return {"ok": False, "error": "缺少 symbol 参数"}
+        direction = "up" if direction == "up" else "down"
+        depth = max(1, min(int(depth), 12))
+        try:
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("PRAGMA query_only = ON")
+                cur = conn.cursor()
+                defs = cur.execute(
+                    "SELECT name, file, line FROM functions WHERE name = ? ORDER BY name LIMIT 20", (symbol.strip(),)
+                ).fetchall()
+                if not defs:
+                    defs = cur.execute(
+                        "SELECT name, file, line FROM functions WHERE name LIKE ? ORDER BY name LIMIT 20",
+                        (f"%{symbol.strip()}%",),
+                    ).fetchall()
+                if not defs:
+                    return {"ok": False, "error": f"未找到函数 {symbol}"}
+
+                chain = [{"name": defs[0][0], "file": defs[0][1], "line": defs[0][2], "level": 0}]
+                links: list[dict[str, str]] = []
+                seen = {defs[0][0]}
+                current = defs[0][0]
+                cur_file = defs[0][1]
+                query = ("SELECT callee, file, line FROM calls WHERE caller = ? LIMIT 80"
+                         if direction == "down" else
+                         "SELECT caller, file, line FROM calls WHERE callee = ? LIMIT 80")
+                stopped = False
+                for level in range(1, depth + 1):
+                    candidates = []
+                    for nb, nf, nl in cur.execute(query, (current,)).fetchall():
+                        if nb in seen:
+                            continue
+                        # 同文件优先（+2），自身调用数归一化中心性（0..1）
+                        score = 2.0 if nf == cur_file else 0.0
+                        cnt = cur.execute("SELECT COUNT(*) FROM calls WHERE caller = ?", (nb,)).fetchone()[0]
+                        score += min(cnt, 500) / 500.0
+                        candidates.append((score, nb, nf, nl))
+                    if not candidates:
+                        stopped = True
+                        break
+                    candidates.sort(key=lambda c: -c[0])
+                    _, nb, nf, nl = candidates[0]
+                    links.append({"source": current, "target": nb})
+                    chain.append({"name": nb, "file": nf, "line": nl, "level": level})
+                    seen.add(nb)
+                    current = nb
+                    cur_file = nf
+                return {
+                    "ok": True,
+                    "symbol": symbol.strip(),
+                    "root": defs[0][0],
+                    "direction": direction,
+                    "chain": chain,
+                    "links": links,
+                    "stopped": stopped,
+                    "depth": depth,
+                }
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001 — 网关边界，返回错误 JSON
+            return {"ok": False, "error": f"kernel-graph 深链查询失败: {exc}"}
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
@@ -1712,6 +1786,13 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             symbol = query.get("symbol", [""])[0].strip()
             depth = int(query.get("depth", ["1"])[0] or "1")
             self._json(self._kernel_graph(symbol, depth=depth))
+            return
+        if path == "/api/kernel/chain":
+            query = urllib.parse.parse_qs(parsed.query)
+            symbol = query.get("symbol", [""])[0].strip()
+            direction = query.get("dir", ["down"])[0]
+            depth = int(query.get("depth", ["8"])[0] or "8")
+            self._json(self._kernel_chain(symbol, direction=direction, depth=depth))
             return
         match = re.fullmatch(r"/api/harness/(knowledge|clean)/(events\.mux|events\.host)", path)
         if match:
