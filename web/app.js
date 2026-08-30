@@ -344,7 +344,7 @@ function toast(message, error = false) {
 // WebSocket is same-origin and passes Harness's origin check. All knowledge /
 // RPC APIs live on the local gateway (8766) and are addressed absolutely.
 // Same-origin API base: on the desktop the page is served from
-// http://127.0.0.1:8766, and on a phone from http://<Mac-LAN-IP>:8766 — in
+// http://127.0.0.1:8876, and on a phone from http://<局域网IP>:8876 — in
 // both cases the API lives right beside the page, so relative is correct and
 // portable. (A hard-coded 127.0.0.1 would point the phone at itself.)
 const API_ORIGIN = "";
@@ -364,7 +364,7 @@ async function jsonFetch(url, options = {}, timeoutMs = 15000) {
     // Remote access without a code (or with a wrong one): prompt once, save,
     // and retry the same request. Local calls never hit this path.
     if (response.status === 401) {
-      const code = window.prompt("Boujoy 手机访问需要访问码（在 Mac 桌面 Boujoy-访问码.txt 中查看）：");
+      const code = window.prompt("Boujoy 手机访问需要访问码（在电脑桌面 Boujoy-访问码.txt 中查看）：");
       if (!code) throw new Error("未输入访问码");
       localStorage.setItem("boujoy-access-code", code.trim());
       request.headers = new Headers(options.headers || {});
@@ -598,7 +598,7 @@ function showDisconnectBanner() {
     banner = document.createElement("div");
     banner.id = "disconnectBanner";
     banner.className = "disconnect-banner hidden";
-    banner.textContent = "⚠ 连接断开 — 检查 Wi-Fi 或 Mac 是否在运行";
+    banner.textContent = "⚠ 连接断开 — 检查 Wi-Fi 或电脑是否在运行";
     document.body.appendChild(banner);
   }
   banner.classList.remove("hidden");
@@ -3002,7 +3002,8 @@ async function loadSettings(tab = "general") {
         <div class="setting-card"><strong>运行模式</strong><small>${state.mode === "clean" ? "纯净模式 · 与 Vault 隔离" : "知识模式 · 已连接 Markdown Vault"}</small></div>
         <div class="setting-card"><strong>本地引擎</strong><small>${escapeHtml(host.provider || "-")} / ${escapeHtml(host.model || "-")} · Harness ${escapeHtml(host.version || "-")}</small></div>
         <div class="setting-card"><strong>忙碌时 Enter 行为</strong><small>选择把新任务排队，或立即引导当前执行。</small><div class="setting-actions"><button data-setting-busy="queue">排队</button><button data-setting-busy="steer">立即引导</button></div></div>
-        <div class="setting-card"><strong>设置文档</strong><small>${settings.namespaces?.length || 0} 个可写命名空间 · 敏感字段始终脱敏</small><div class="setting-actions"><button data-open-settings-document>打开 Harness 设置文件</button></div></div>`;
+        <div class="setting-card"><strong>设置文档</strong><small>${settings.namespaces?.length || 0} 个可写命名空间 · 敏感字段始终脱敏</small><div class="setting-actions"><button data-open-settings-document>打开 Harness 设置文件</button></div></div>
+        <div class="setting-card"><strong>手机互联</strong><small>用手机浏览器访问本机 Boujoy（含内核 Dashboard），需同一 Wi-Fi。</small><div class="setting-actions"><button data-open-pair>查看配对信息</button></div></div>`;
     } else if (tab === "projects") {
       const value = await rpc("workspace.list", {});
       state.workspaces = normalizeWorkspaces(value);
@@ -3081,9 +3082,25 @@ async function presetAction(action, id) {
   } catch (error) { toast(error.message, true); }
 }
 
+async function openPairDialog() {
+  const dialog = $("#pairDialog");
+  if (!dialog) return;
+  const urlEl = $("#pairUrl"), codeEl = $("#pairCode"), errEl = $("#pairError");
+  urlEl.textContent = "加载中…"; codeEl.textContent = "…"; errEl.textContent = "";
+  try {
+    const info = await jsonFetch("/api/access-info");
+    urlEl.textContent = info.url || "http://<局域网IP>:8876";
+    codeEl.textContent = info.accessCode || "—";
+  } catch (error) {
+    errEl.textContent = "读取失败：" + error.message + "（可查看电脑桌面 Boujoy-访问码.txt）";
+  }
+  dialog.showModal();
+}
+
 async function settingsAction(target) {
   try {
     if (target.matches("[data-open-settings-document]")) await rpc("settings.openDocument", {});
+    if (target.matches("[data-open-pair]")) openPairDialog();
     if (target.matches("[data-setting-busy]")) { const described = await rpc("settings.describe", {}); const ns = described.namespaces?.find(item => item.ns === "ui-conversation"); await rpc("settings.update", { ns: "ui-conversation", patch: { busyEnter: target.dataset.settingBusy }, expectedRevision: ns?.revision }); setBusyMode(target.dataset.settingBusy); toast("输入行为已更新"); }
     if (target.matches("[data-credential-set]")) { const value = $("#credentialInput")?.value.trim(); if (!value) return; await rpc("credentials.set", { ref: "DEEPSEEK_API_KEY", value }); $("#credentialInput").value = ""; toast("凭证已保存到 Harness 本地凭证库"); }
     if (target.matches("[data-credential-unset]")) { if (!confirm("清除 DeepSeek API 凭证？")) return; await rpc("credentials.unset", { ref: "DEEPSEEK_API_KEY" }); toast("凭证已清除"); }
@@ -3183,7 +3200,7 @@ function bindEvents() {
     if (workspaceActionButton) { const [action, id] = workspaceActionButton.dataset.workspaceAction.split(":"); workspaceAction(action, id); return; }
     const presetActionButton = event.target.closest("[data-preset-action]");
     if (presetActionButton) { const [action, id] = presetActionButton.dataset.presetAction.split(":"); presetAction(action, id); return; }
-    const settingsActionButton = event.target.closest("[data-open-settings-document],[data-setting-busy],[data-credential-set],[data-credential-unset],[data-discover-models]");
+    const settingsActionButton = event.target.closest("[data-open-settings-document],[data-setting-busy],[data-credential-set],[data-credential-unset],[data-discover-models],[data-open-pair]");
     if (settingsActionButton) { settingsAction(settingsActionButton); return; }
     const goalActionButton = event.target.closest("[data-goal-action]");
     if (goalActionButton) { goalAction(goalActionButton.dataset.goalAction); return; }
@@ -3229,21 +3246,8 @@ function bindEvents() {
     mobileDrawer.classList.add("hidden");
     $("#mobileMenuButton")?.setAttribute("aria-expanded", "false");
   };
-  const openPairDialog = async () => {
-    const dialog = $("#pairDialog");
-    if (!dialog) return;
-    const urlEl = $("#pairUrl"), codeEl = $("#pairCode"), errEl = $("#pairError");
-    urlEl.textContent = "加载中…"; codeEl.textContent = "…"; errEl.textContent = "";
-    try {
-      const info = await jsonFetch("/api/access-info");
-      urlEl.textContent = info.url || "http://<Mac 局域网IP>:8766";
-      codeEl.textContent = info.accessCode || "—";
-    } catch (error) {
-      errEl.textContent = "读取失败：" + error.message + "（可查看 Mac 桌面 Boujoy-访问码.txt）";
-    }
-    dialog.showModal();
-  };
   $("#mobileMenuButton")?.addEventListener("click", openDrawer);
+  $("#pairButton")?.addEventListener("click", openPairDialog);
   $("#mobileDrawerClose")?.addEventListener("click", closeDrawer);
   mobileDrawer?.addEventListener("click", (e) => { if (e.target === mobileDrawer) closeDrawer(); });
   $("#mobileSessionList")?.addEventListener("click", (e) => {
