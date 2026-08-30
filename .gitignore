@@ -6,6 +6,8 @@ boujoy-config.json
 # Local runtimes, state, caches, and credentials never belong in the
 # public source repository.
 runtime/
+.state/
+.npm-cache/
 .env
 .env.*
 !.env.example
