@@ -1265,3 +1265,25 @@ html[data-theme="dark"] .page-kernel-dash {
 .kernel-list li { font-size: 13px; line-height: 1.5; display: flex; gap: 8px; align-items: baseline; }
 .kernel-list code { color: var(--acid); font-family: var(--mono); font-size: 12px; }
 .kernel-list .muted { color: var(--muted); font-size: 12px; }
+
+.kernel-graph-panel { margin-bottom: 26px; }
+.kernel-graph-toolbar { display: flex; gap: 10px; align-items: stretch; margin-bottom: 12px; flex-wrap: wrap; }
+.kernel-graph-toolbar input[type="text"] {
+  flex: 1 1 320px; padding: 10px 14px; min-width: 0;
+  border: 2px solid color-mix(in srgb, currentColor 60%, transparent);
+  background: color-mix(in srgb, var(--panel-solid) 90%, transparent);
+  color: inherit; font: 700 13px var(--mono);
+}
+.kernel-graph-toolbar input[type="text"]:focus { outline: none; border-color: var(--acid); }
+.kernel-graph-toolbar .inline-select { padding: 0 10px; border: 2px solid color-mix(in srgb, currentColor 60%, transparent); background: color-mix(in srgb, var(--panel-solid) 90%, transparent); color: inherit; }
+.kernel-graph-canvas {
+  position: relative; overflow: hidden;
+  min-height: 540px;
+  border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+  background:
+    radial-gradient(circle at 20% 15%, rgba(36,57,255,.08), transparent 30%),
+    radial-gradient(circle at 80% 85%, rgba(255,43,139,.07), transparent 30%),
+    color-mix(in srgb, var(--panel-solid) 92%, transparent);
+}
+.kernel-graph-canvas .muted { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 0 30px; }
+.kernel-graph-canvas svg { display: block; }

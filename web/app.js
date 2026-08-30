@@ -3367,6 +3367,8 @@ function bindEvents() {
     await renderKernelDashboard();
     toast("仪表盘已刷新");
   });
+  $("#kernelGraphGo").addEventListener("click", queryKernelGraph);
+  $("#kernelGraphQuery").addEventListener("keydown", event => { if (event.key === "Enter") queryKernelGraph(); });
   $("#graphCanvas").addEventListener("click", event => { const node = event.target.closest("[data-graph-path]"); if (node) { $("#graphDialog").close(); openReader(node.dataset.graphPath); } });
   $("#healthDetails").addEventListener("click", event => { if (event.target.closest("[data-cleanup-all]")) cleanupReported(); });
   $("#addExpertButton").addEventListener("click", () => openRecordDialog("expert"));
@@ -3436,6 +3438,67 @@ async function init() {
 function monitorSessionLabel() {
   const session = state.sessions.find(item => item.id === state.sessionId);
   return session ? sessionTitle(session) : "未选择会话";
+}
+
+function renderKernelGraphSVG(canvas, data) {
+  if (!window.d3) { canvas.innerHTML = '<p class="muted">d3 未加载（vendor/d3.min.js 缺失）</p>'; return; }
+  const width = Math.max(canvas.clientWidth || 900, 480);
+  const height = 540;
+  canvas.innerHTML = "";
+  const svg = d3.select(canvas).append("svg").attr("width", "100%").attr("height", height).attr("viewBox", `0 0 ${width} ${height}`);
+  const g = svg.append("g");
+  svg.call(d3.zoom().scaleExtent([0.15, 5]).on("zoom", (ev) => g.attr("transform", ev.transform)));
+  const nodes = data.nodes.map(n => ({ ...n }));
+  const links = data.links.map((l, i) => ({ source: l.source, target: l.target, id: i, file: l.file, line: l.line }));
+  const sim = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(d => d.source.root || d.target.root ? 110 : 85))
+    .force("charge", d3.forceManyBody().strength(-300))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force("collide", d3.forceCollide(18));
+  const link = g.append("g").selectAll("line").data(links).join("line")
+    .attr("stroke", d => d.source.root || d.target.root ? "rgba(210,255,0,.35)" : "rgba(255,255,255,.18)")
+    .attr("stroke-width", 1);
+  const node = g.append("g").selectAll("g").data(nodes).join("g")
+    .style("cursor", "pointer")
+    .call(d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended));
+  node.append("circle")
+    .attr("r", d => d.root ? 15 : (d.nodeCount > 8 ? 11 : 8))
+    .attr("fill", d => d.root ? "var(--acid)" : d.linkCount > 6 ? "var(--pink)" : "var(--blue)")
+    .attr("stroke", "var(--ink)").attr("stroke-width", 2);
+  node.append("text").text(d => d.name)
+    .attr("x", d => (d.root ? 20 : 14)).attr("y", 4)
+    .attr("font-size", d => d.root ? 13 : 11)
+    .attr("font-weight", d => d.root ? 900 : 600)
+    .attr("fill", "currentColor")
+    .style("paint-order", "stroke").style("stroke", "var(--panel-solid)").style("stroke-width", 3);
+  node.append("title").text(d => `${d.name}\n${d.file}:${d.line}${d.root ? "\n（根节点）" : ""}`);
+  sim.on("tick", () => {
+    link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+    node.attr("transform", d => `translate(${d.x},${d.y})`);
+  });
+  function dragstarted(ev, d) { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+  function dragged(ev, d) { d.fx = ev.x; d.fy = ev.y; }
+  function dragended(ev, d) { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }
+}
+
+async function queryKernelGraph() {
+  const canvas = $("#kernelGraphCanvas");
+  const symbol = ($("#kernelGraphQuery").value || "").trim();
+  if (!symbol) { canvas.innerHTML = '<p class="muted">请输入函数名。</p>'; return; }
+  const depth = $("#kernelGraphDepth").value || "2";
+  canvas.innerHTML = '<p class="muted">正在查询 kernel-graph 数据库…</p>';
+  try {
+    const data = await jsonFetch(`/api/kernel/graph?symbol=${encodeURIComponent(symbol)}&depth=${depth}`, { cache: "no-store" });
+    if (!data?.ok) { canvas.innerHTML = `<p class="muted">${escapeHtml(data?.error || "查询失败")}</p>`; return; }
+    if (!data.nodes?.length) { canvas.innerHTML = '<p class="muted">没有调用关系数据。</p>'; return; }
+    // 节点度数着色辅助
+    const degree = {};
+    data.links.forEach(l => { degree[l.source] = (degree[l.source] || 0) + 1; degree[l.target] = (degree[l.target] || 0) + 1; });
+    data.nodes.forEach(n => { n.linkCount = degree[n.id] || 0; });
+    renderKernelGraphSVG(canvas, data);
+  } catch (error) {
+    canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
 }
 
 function renderKernelDashboard() {

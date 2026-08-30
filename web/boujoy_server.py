@@ -1350,6 +1350,79 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             "journal": journal[:6],
         }
 
+    def _kernel_graph(self, symbol: str, depth: int = 1, limit: int = 200) -> dict[str, Any]:
+        """从 kernel-graph 数据库查询函数的调用链（callers + callees，BFS 到 depth 层）。"""
+        import sqlite3
+        db = r"D:\claude配置\kernel-graph\linux7.2rc6.db"
+        if not os.path.isfile(db):
+            return {"ok": False, "error": f"kernel-graph 数据库不存在: {db}"}
+        if not symbol or not symbol.strip():
+            return {"ok": False, "error": "缺少 symbol 参数"}
+        try:
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("PRAGMA query_only = ON")
+                cur = conn.cursor()
+                # 先精确匹配，再模糊搜索兜底
+                defs = cur.execute(
+                    "SELECT name, file, line FROM functions WHERE name = ? ORDER BY name LIMIT 20", (symbol.strip(),)
+                ).fetchall()
+                if not defs:
+                    defs = cur.execute(
+                        "SELECT name, file, line FROM functions WHERE name LIKE ? ORDER BY name LIMIT 20",
+                        (f"%{symbol.strip()}%",),
+                    ).fetchall()
+                if not defs:
+                    return {"ok": False, "error": f"未找到函数 {symbol}"}
+                root = defs[0][0]
+                nodes: dict[str, dict[str, Any]] = {}
+                links: list[dict[str, Any]] = []
+                nodes[root] = {"id": root, "name": root, "file": defs[0][1], "line": defs[0][2], "root": True}
+                frontier = [root]
+                seen = {root}
+                for _ in range(max(1, min(int(depth), 3))):
+                    if len(nodes) >= limit:
+                        break
+                    nxt: list[str] = []
+                    for fn in frontier:
+                        if len(nodes) >= limit:
+                            break
+                        for callee, file, line in cur.execute(
+                            "SELECT callee, file, line FROM calls WHERE caller = ? LIMIT 60", (fn,)
+                        ).fetchall():
+                            if len(nodes) >= limit:
+                                break
+                            if callee not in seen:
+                                nodes[callee] = {"id": callee, "name": callee, "file": file, "line": line, "root": False}
+                                seen.add(callee)
+                                nxt.append(callee)
+                            links.append({"source": fn, "target": callee, "file": file, "line": line})
+                        for caller, file, line in cur.execute(
+                            "SELECT caller, file, line FROM calls WHERE callee = ? LIMIT 60", (fn,)
+                        ).fetchall():
+                            if len(nodes) >= limit:
+                                break
+                            if caller not in seen:
+                                nodes[caller] = {"id": caller, "name": caller, "file": file, "line": line, "root": False}
+                                seen.add(caller)
+                                nxt.append(caller)
+                            links.append({"source": caller, "target": fn, "file": file, "line": line})
+                    frontier = nxt
+                    if not frontier:
+                        break
+                return {
+                    "ok": True,
+                    "symbol": symbol.strip(),
+                    "root": root,
+                    "defs": [{"name": n, "file": f, "line": l} for n, f, l in defs[:5]],
+                    "nodes": list(nodes.values()),
+                    "links": links,
+                }
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001 — 网关边界，返回错误 JSON
+            return {"ok": False, "error": f"kernel-graph 查询失败: {exc}"}
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
@@ -1622,6 +1695,12 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/kernel/stats":
             self._json(self._kernel_stats())
+            return
+        if path == "/api/kernel/graph":
+            query = urllib.parse.parse_qs(parsed.query)
+            symbol = query.get("symbol", [""])[0].strip()
+            depth = int(query.get("depth", ["1"])[0] or "1")
+            self._json(self._kernel_graph(symbol, depth=depth))
             return
         match = re.fullmatch(r"/api/harness/(knowledge|clean)/(events\.mux|events\.host)", path)
         if match:

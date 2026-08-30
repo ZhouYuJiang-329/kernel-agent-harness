@@ -275,6 +275,16 @@
           <div><p class="section-kicker">KERNEL LEARNING / DASHBOARD</p><h2>内核知识，<br><span>一眼看全。</span></h2><p>子系统进度、节点状态、依赖图规模与开放问题，来自 vault 实时统计。</p></div>
           <button id="kernelDashRefresh" class="mini-cut">↻ 刷新</button>
         </div>
+        <div class="kernel-graph-panel">
+          <div class="kernel-graph-toolbar">
+            <input id="kernelGraphQuery" type="text" placeholder="输入函数名查询调用图谱，如 __schedule / pick_next_task" spellcheck="false">
+            <select id="kernelGraphDepth" class="inline-select" aria-label="深度">
+              <option value="1">1 层</option><option value="2" selected>2 层</option><option value="3">3 层</option>
+            </select>
+            <button id="kernelGraphGo" class="mini-cut">查询图谱</button>
+          </div>
+          <div id="kernelGraphCanvas" class="kernel-graph-canvas"><p class="muted">输入函数名，从 kernel-graph 数据库（420 万条调用边）查询调用关系。</p></div>
+        </div>
         <div id="kernelDashContent" class="kernel-dash-content"><p class="muted">加载中…</p></div>
       </section>
     </main>
@@ -374,6 +384,7 @@
     </form>
   </dialog>
 
+  <script src="vendor/d3.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
