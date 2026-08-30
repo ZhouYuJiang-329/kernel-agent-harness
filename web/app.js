@@ -3445,11 +3445,27 @@ function renderKernelGraphSVG(canvas, data) {
   const width = Math.max(canvas.clientWidth || 900, 480);
   const height = 540;
   canvas.innerHTML = "";
-  const svg = d3.select(canvas).append("svg").attr("width", "100%").attr("height", height).attr("viewBox", `0 0 ${width} ${height}`);
+
+  const legend = document.createElement("div");
+  legend.className = "kernel-graph-legend";
+  legend.innerHTML = `<span><i style="background:var(--acid)"></i>根</span><span><i style="background:var(--blue)"></i>1 层</span><span><i style="background:var(--cyan)"></i>2 层</span><span><i style="background:var(--pink)"></i>3 层</span>`;
+  canvas.appendChild(legend);
+
+  const meta = document.createElement("div");
+  meta.className = "kernel-graph-meta";
+  meta.textContent = `${data.nodes.length} 节点 · ${data.links.length} 边 · 深度 ${data.depth}${data.capped ? " · ⚠ 已达显示上限，部分节点省略（建议降低深度）" : ""}`;
+  canvas.appendChild(meta);
+
+  const wrap = document.createElement("div");
+  wrap.className = "kernel-graph-wrap";
+  canvas.appendChild(wrap);
+
+  const svg = d3.select(wrap).append("svg").attr("width", "100%").attr("height", height).attr("viewBox", `0 0 ${width} ${height}`);
   const g = svg.append("g");
   svg.call(d3.zoom().scaleExtent([0.15, 5]).on("zoom", (ev) => g.attr("transform", ev.transform)));
   const nodes = data.nodes.map(n => ({ ...n }));
   const links = data.links.map((l, i) => ({ source: l.source, target: l.target, id: i, file: l.file, line: l.line }));
+  const depthColor = { 0: "var(--acid)", 1: "var(--blue)", 2: "var(--cyan)", 3: "var(--pink)" };
   const sim = d3.forceSimulation(nodes)
     .force("link", d3.forceLink(links).id(d => d.id).distance(d => d.source.root || d.target.root ? 110 : 85))
     .force("charge", d3.forceManyBody().strength(-300))
@@ -3462,8 +3478,8 @@ function renderKernelGraphSVG(canvas, data) {
     .style("cursor", "pointer")
     .call(d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended));
   node.append("circle")
-    .attr("r", d => d.root ? 15 : (d.nodeCount > 8 ? 11 : 8))
-    .attr("fill", d => d.root ? "var(--acid)" : d.linkCount > 6 ? "var(--pink)" : "var(--blue)")
+    .attr("r", d => d.root ? 15 : (d.linkCount > 8 ? 11 : 8))
+    .attr("fill", d => d.root ? depthColor[0] : (depthColor[d.depth] || "#64748b"))
     .attr("stroke", "var(--ink)").attr("stroke-width", 2);
   node.append("text").text(d => d.name)
     .attr("x", d => (d.root ? 20 : 14)).attr("y", 4)
@@ -3471,7 +3487,7 @@ function renderKernelGraphSVG(canvas, data) {
     .attr("font-weight", d => d.root ? 900 : 600)
     .attr("fill", "currentColor")
     .style("paint-order", "stroke").style("stroke", "var(--panel-solid)").style("stroke-width", 3);
-  node.append("title").text(d => `${d.name}\n${d.file}:${d.line}${d.root ? "\n（根节点）" : ""}`);
+  node.append("title").text(d => `${d.name}\n${d.file}:${d.line}${d.root ? "\n（根节点）" : `\n（${d.depth} 层）`}`);
   sim.on("tick", () => {
     link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
     node.attr("transform", d => `translate(${d.x},${d.y})`);

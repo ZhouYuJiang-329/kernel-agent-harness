@@ -1350,8 +1350,12 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             "journal": journal[:6],
         }
 
-    def _kernel_graph(self, symbol: str, depth: int = 1, limit: int = 200) -> dict[str, Any]:
-        """从 kernel-graph 数据库查询函数的调用链（callers + callees，BFS 到 depth 层）。"""
+    def _kernel_graph(self, symbol: str, depth: int = 1, limit: int = 300, fanout: int = 25) -> dict[str, Any]:
+        """从 kernel-graph 数据库查询函数的调用链（callers + callees，BFS 到 depth 层）。
+
+        每个节点带 depth 字段（0=根），供前端按层着色。每节点最多展开 fanout 条边，
+        总节点数上限 limit（超限标记 capped，避免前端渲染爆炸）。
+        """
         import sqlite3
         db = r"D:\claude配置\kernel-graph\linux7.2rc6.db"
         if not os.path.isfile(db):
@@ -1377,33 +1381,38 @@ class BoujoyHandler(BaseHTTPRequestHandler):
                 root = defs[0][0]
                 nodes: dict[str, dict[str, Any]] = {}
                 links: list[dict[str, Any]] = []
-                nodes[root] = {"id": root, "name": root, "file": defs[0][1], "line": defs[0][2], "root": True}
+                nodes[root] = {"id": root, "name": root, "file": defs[0][1], "line": defs[0][2], "root": True, "depth": 0}
                 frontier = [root]
                 seen = {root}
-                for _ in range(max(1, min(int(depth), 3))):
+                capped = False
+                for level in range(1, max(1, min(int(depth), 4)) + 1):
                     if len(nodes) >= limit:
+                        capped = True
                         break
                     nxt: list[str] = []
                     for fn in frontier:
                         if len(nodes) >= limit:
+                            capped = True
                             break
                         for callee, file, line in cur.execute(
-                            "SELECT callee, file, line FROM calls WHERE caller = ? LIMIT 60", (fn,)
+                            "SELECT callee, file, line FROM calls WHERE caller = ? LIMIT ?", (fn, fanout)
                         ).fetchall():
                             if len(nodes) >= limit:
+                                capped = True
                                 break
                             if callee not in seen:
-                                nodes[callee] = {"id": callee, "name": callee, "file": file, "line": line, "root": False}
+                                nodes[callee] = {"id": callee, "name": callee, "file": file, "line": line, "root": False, "depth": level}
                                 seen.add(callee)
                                 nxt.append(callee)
                             links.append({"source": fn, "target": callee, "file": file, "line": line})
                         for caller, file, line in cur.execute(
-                            "SELECT caller, file, line FROM calls WHERE callee = ? LIMIT 60", (fn,)
+                            "SELECT caller, file, line FROM calls WHERE callee = ? LIMIT ?", (fn, fanout)
                         ).fetchall():
                             if len(nodes) >= limit:
+                                capped = True
                                 break
                             if caller not in seen:
-                                nodes[caller] = {"id": caller, "name": caller, "file": file, "line": line, "root": False}
+                                nodes[caller] = {"id": caller, "name": caller, "file": file, "line": line, "root": False, "depth": level}
                                 seen.add(caller)
                                 nxt.append(caller)
                             links.append({"source": caller, "target": fn, "file": file, "line": line})
@@ -1417,6 +1426,8 @@ class BoujoyHandler(BaseHTTPRequestHandler):
                     "defs": [{"name": n, "file": f, "line": l} for n, f, l in defs[:5]],
                     "nodes": list(nodes.values()),
                     "links": links,
+                    "capped": capped,
+                    "depth": min(max(1, int(depth)), 4),
                 }
             finally:
                 conn.close()

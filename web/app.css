@@ -1287,3 +1287,10 @@ html[data-theme="dark"] .page-kernel-dash {
 }
 .kernel-graph-canvas .muted { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 0 30px; }
 .kernel-graph-canvas svg { display: block; }
+
+.kernel-graph-legend { display: flex; gap: 14px; padding: 10px 12px 0; font: 800 10px var(--mono); letter-spacing: .08em; color: var(--muted); flex-wrap: wrap; }
+.kernel-graph-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.kernel-graph-legend i { width: 9px; height: 9px; display: inline-block; border: 1.5px solid var(--ink); }
+.kernel-graph-meta { padding: 6px 12px 0; font: 700 10px var(--mono); color: var(--muted); }
+.kernel-graph-wrap { position: relative; }
+.kernel-graph-wrap svg { display: block; }
