@@ -3394,6 +3394,7 @@ function bindEvents() {
     await renderKernelDashboard();
     if (kernelTab === "nodes") renderKernelNodes();
     if (kernelTab === "qa") renderKernelQa();
+    if (kernelTab === "docs") { kernelDocsMeta = null; kernelDocsContent = {}; renderKernelDocs(); }
     toast("仪表盘已刷新");
   });
   $("#kernelGraphGo").addEventListener("click", queryKernelGraph);
@@ -4224,15 +4225,20 @@ async function renderKernelQa() {
   }
 }
 
-let kernelDocsData = null;
-let kernelDocsCurrent = null;
+let kernelDocsMeta = null;        // 目录元数据缓存（不含正文）
+let kernelDocsCurrent = null;     // 当前文档 {sub, path}
+let kernelDocsContent = {};       // path → {sub, name, content, ...} 正文缓存
+let kernelDocsCollapsed = {};     // sub → 折叠状态
+let kernelDocsQuery = "";         // 搜索词
+let kernelDocsResults = null;     // 搜索结果 [{sub, path, name, dir, hits}]
+let kernelDocsSearchTimer = null;
 
 async function renderKernelDocs() {
-  if (!kernelDocsData) {
+  if (!kernelDocsMeta) {
     try {
       const data = await jsonFetch("/api/kernel/docs", { cache: "no-store" });
       if (!data?.ok) throw new Error(data?.error || "读取失败");
-      kernelDocsData = data;
+      kernelDocsMeta = data;
     } catch (error) {
       const tree = $("#kernelDocsTree");
       const reader = $("#kernelDocsReader");
@@ -4241,49 +4247,168 @@ async function renderKernelDocs() {
       return;
     }
   }
-  const subsystems = kernelDocsData.subsystems || [];
-  const allFiles = subsystems.flatMap(s => s.files.map(f => ({ ...f, sub: s.sub })));
-  if (!kernelDocsCurrent || !allFiles.some(f => f.path === kernelDocsCurrent.path)) {
-    const first = subsystems.find(s => s.files.some(f => !f.isIndex)) || subsystems[0];
+  if (!kernelDocsCurrent || !kernelDocsFindMeta(kernelDocsCurrent.path)) {
+    const first = (kernelDocsMeta.subsystems || []).find(s => s.files.some(f => !f.isIndex));
     const target = first?.files.find(f => !f.isIndex) || first?.files[0];
     kernelDocsCurrent = target ? { sub: first.sub, path: target.path } : null;
   }
   renderKernelDocsTree();
-  renderKernelDocReader(allFiles);
+  renderKernelDocReader();
+}
+
+function kernelDocsFindMeta(path) {
+  for (const s of kernelDocsMeta?.subsystems || []) {
+    const f = s.files.find(f => f.path === path);
+    if (f) return { ...f, sub: s.sub };
+  }
+  return null;
+}
+
+function kernelDocsAllFiles() {
+  return (kernelDocsMeta?.subsystems || []).flatMap(s => s.files.map(f => ({ ...f, sub: s.sub })));
+}
+
+function kernelDocsFileGroups(files) {
+  const groups = new Map();
+  for (const f of files) {
+    const key = f.dir || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(f);
+  }
+  return [...groups.entries()].sort((a, b) =>
+    a[0].split("/").length - b[0].split("/").length || (a[0] < b[0] ? -1 : 1));
 }
 
 function renderKernelDocsTree() {
   const tree = $("#kernelDocsTree");
   if (!tree) return;
-  const subsystems = kernelDocsData?.subsystems || [];
-  tree.innerHTML = subsystems.map(sub => `
-    <div class="kernel-docs-sub">
-      <div class="kernel-docs-sub-title">${escapeHtml(sub.sub)}<small>${sub.files.length}</small></div>
-      ${sub.files.map(f => `
-        <button class="kernel-docs-file ${kernelDocsCurrent?.path === f.path ? "active" : ""}"
+  tree.innerHTML = `
+    <div class="kernel-docs-search">
+      <input id="kernelDocsSearch" type="text" placeholder="搜索文档内容，如 __schedule / task_struct" spellcheck="false" value="${escapeHtml(kernelDocsQuery)}">
+      <button id="kernelDocsSearchClear" class="mini-cut" type="button" title="清空搜索">✕</button>
+    </div>
+    <div id="kernelDocsTreeBody"></div>`;
+  const search = $("#kernelDocsSearch");
+  if (search) search.addEventListener("input", scheduleKernelDocsSearch);
+  $("#kernelDocsSearchClear").addEventListener("click", () => {
+    kernelDocsQuery = "";
+    kernelDocsResults = null;
+    renderKernelDocsBody();
+  });
+  renderKernelDocsBody();
+}
+
+function renderKernelDocsBody() {
+  const body = $("#kernelDocsTreeBody");
+  if (!body) return;
+  if (kernelDocsQuery.trim()) { renderKernelDocsResults(); return; }
+  const subsystems = kernelDocsMeta?.subsystems || [];
+  body.innerHTML = subsystems.map(sub => {
+    const collapsed = !!kernelDocsCollapsed[sub.sub];
+    const filesHtml = kernelDocsFileGroups(sub.files).map(([dir, files]) => `
+      ${dir ? `<div class="kernel-docs-dir">${escapeHtml(dir)}</div>` : ""}
+      ${files.map(f => `
+        <button class="kernel-docs-file ${kernelDocsCurrent?.path === f.path ? "active" : ""}" style="--depth:${dir.split("/").length}"
           data-doc-sub="${escapeHtml(sub.sub)}" data-doc-path="${escapeHtml(f.path)}" type="button">
           ${f.isIndex ? '<span class="kernel-docs-badge">入口</span>' : ""}<span class="kernel-docs-file-name">${escapeHtml(f.name)}</span>
         </button>`).join("")}
-    </div>`).join("") || '<p class="muted">07-Learn 下暂无笔记。</p>';
-  tree.querySelectorAll("[data-doc-path]").forEach(button => button.addEventListener("click", () => {
+    `).join("");
+    return `<div class="kernel-docs-sub ${collapsed ? "collapsed" : ""}">
+      <div class="kernel-docs-sub-title" data-sub-toggle="${escapeHtml(sub.sub)}" role="button">
+        <span class="kernel-docs-caret">▾</span>${escapeHtml(sub.sub)}<small>${sub.files.length}</small>
+      </div>
+      <div class="kernel-docs-files">${filesHtml}</div>
+    </div>`;
+  }).join("") || '<p class="muted">07-Learn 下暂无笔记。</p>';
+  body.querySelectorAll("[data-sub-toggle]").forEach(btn => btn.addEventListener("click", () => {
+    kernelDocsCollapsed[btn.dataset.subToggle] = !kernelDocsCollapsed[btn.dataset.subToggle];
+    renderKernelDocsBody();
+  }));
+  body.querySelectorAll("[data-doc-path]").forEach(button => button.addEventListener("click", () => {
     kernelDocsCurrent = { sub: button.dataset.docSub, path: button.dataset.docPath };
-    renderKernelDocsTree();
-    renderKernelDocReader((kernelDocsData?.subsystems || []).flatMap(s => s.files.map(f => ({ ...f, sub: s.sub }))));
+    renderKernelDocsBody();
+    renderKernelDocReader();
   }));
 }
 
-function renderKernelDocReader(allFiles) {
+function scheduleKernelDocsSearch() {
+  clearTimeout(kernelDocsSearchTimer);
+  kernelDocsSearchTimer = setTimeout(() => doKernelDocsSearch($("#kernelDocsSearch")?.value || ""), 250);
+}
+
+async function doKernelDocsSearch(q) {
+  q = (q || "").trim();
+  if (!q) {
+    kernelDocsQuery = "";
+    kernelDocsResults = null;
+    renderKernelDocsBody();
+    return;
+  }
+  try {
+    const data = await jsonFetch("/api/kernel/docs/search?q=" + encodeURIComponent(q), { cache: "no-store" });
+    kernelDocsQuery = q;
+    kernelDocsResults = data?.ok ? (data.results || []) : [];
+  } catch {
+    kernelDocsQuery = q;
+    kernelDocsResults = [];
+  }
+  renderKernelDocsBody();
+}
+
+function renderKernelDocsResults() {
+  const body = $("#kernelDocsTreeBody");
+  if (!body) return;
+  if (!kernelDocsResults?.length) {
+    body.innerHTML = `<p class="kernel-docs-search-empty">没有文档命中 “${escapeHtml(kernelDocsQuery)}”</p>`;
+    return;
+  }
+  body.innerHTML = kernelDocsResults.map(r => `
+    <div class="kernel-docs-search-hit" data-hit-path="${escapeHtml(r.path)}">
+      <div class="kernel-docs-search-hit-head"><b>${escapeHtml(r.sub)}</b><span>${escapeHtml(r.dir ? r.dir + "/" : "")}${escapeHtml(r.name)}</span></div>
+      ${r.hits.map(h => `<div class="kernel-docs-search-hit-line">${highlightKernelDocs(h.text, kernelDocsQuery)}</div>`).join("")}
+    </div>`).join("");
+  body.querySelectorAll("[data-hit-path]").forEach(hit => hit.addEventListener("click", () => {
+    const meta = kernelDocsFindMeta(hit.dataset.hitPath);
+    if (!meta) return;
+    kernelDocsCurrent = { sub: meta.sub, path: meta.path };
+    kernelDocsQuery = "";
+    kernelDocsResults = null;
+    renderKernelDocsTree();
+    renderKernelDocReader();
+  }));
+}
+
+function highlightKernelDocs(text, q) {
+  const esc = escapeHtml(String(text));
+  if (!q) return esc;
+  const escaped = escapeHtml(q).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return esc.replace(new RegExp(escaped, "gi"), m => `<mark>${m}</mark>`);
+}
+
+async function renderKernelDocReader() {
   const reader = $("#kernelDocsReader");
   if (!reader) return;
-  const file = allFiles?.find(f => f.path === kernelDocsCurrent?.path);
-  if (!file) {
+  if (!kernelDocsCurrent) {
     reader.innerHTML = '<p class="muted">从左侧选择一篇学习笔记。</p>';
     return;
   }
+  let entry = kernelDocsContent[kernelDocsCurrent.path];
+  if (!entry) {
+    reader.innerHTML = '<p class="muted">加载中…</p>';
+    try {
+      const data = await jsonFetch("/api/kernel/docs?path=" + encodeURIComponent(kernelDocsCurrent.path), { cache: "no-store" });
+      if (!data?.ok) throw new Error(data?.error || "读取失败");
+      entry = data.file;
+      kernelDocsContent[kernelDocsCurrent.path] = entry;
+    } catch (error) {
+      reader.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+      return;
+    }
+  }
   reader.innerHTML = `
-    <div class="kernel-docs-crumb">${escapeHtml(file.sub)} <span class="kernel-docs-crumb-slash">/</span> ${escapeHtml(file.name)}${file.isIndex ? ' <span class="kernel-docs-badge">入口索引</span>' : ""}</div>
-    <div class="kernel-docs-content">${markdown(file.content)}</div>`;
-  wireKernelDocLinks(reader, file.path, allFiles);
+    <div class="kernel-docs-crumb">${escapeHtml(entry.sub)} <span class="kernel-docs-crumb-slash">/</span> ${escapeHtml(entry.name)}${entry.isIndex ? ' <span class="kernel-docs-badge">入口索引</span>' : ""}</div>
+    <div class="kernel-docs-content">${markdown(entry.content)}</div>`;
+  wireKernelDocLinks(reader, entry.path, kernelDocsAllFiles());
   renderKernelMermaid(reader);
   reader.scrollTop = 0;
 }
@@ -4306,7 +4431,7 @@ function wireKernelDocLinks(root, currentPath, allFiles) {
       event.preventDefault();
       kernelDocsCurrent = { sub: match.sub, path: match.path };
       renderKernelDocsTree();
-      renderKernelDocReader(allFiles);
+      renderKernelDocReader();
     });
   });
 }

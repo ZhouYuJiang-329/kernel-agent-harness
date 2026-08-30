@@ -1850,7 +1850,8 @@ class BoujoyHandler(BaseHTTPRequestHandler):
         return {"ok": True, "nodes": nodes}
 
     def _kernel_docs(self) -> dict[str, Any]:
-        """学习文档：扫描 vault/07-Learn/{sub}/**/*.md，返回 {subsystems: [{sub, files}]}。"""
+        """学习文档目录：扫描 vault/07-Learn/{sub}/**/*.md 返回元数据（不含正文）。
+        文件按 _index 优先、其余按 mtime 倒序（最新在上）。"""
         learn_root = self.config.vault / "07-Learn"
         subsystems: list[dict[str, Any]] = []
         if learn_root.is_dir():
@@ -1862,16 +1863,80 @@ class BoujoyHandler(BaseHTTPRequestHandler):
                     if not md.is_file():
                         continue
                     rel = md.relative_to(self.config.vault).as_posix()
+                    parent_rel = md.parent.relative_to(sub_dir)
+                    stat = md.stat()
                     files.append({
                         "name": md.name,
                         "path": rel,
-                        "content": md.read_text("utf-8", errors="replace"),
+                        "dir": "" if parent_rel == Path(".") else parent_rel.as_posix(),
                         "isIndex": md.name == "_index.md",
+                        "size": stat.st_size,
+                        "mtime": int(stat.st_mtime),
                     })
                 if files:
-                    files.sort(key=lambda f: (not f["isIndex"], f["name"]))
+                    files.sort(key=lambda f: (not f["isIndex"], -f["mtime"]))
                     subsystems.append({"sub": sub_dir.name, "files": files})
         return {"ok": True, "subsystems": subsystems}
+
+    def _kernel_doc(self, path: str) -> dict[str, Any]:
+        """单篇学习文档正文（防路径穿越，仅限 07-Learn 内 .md）。"""
+        if not path or not path.endswith(".md"):
+            return {"ok": False, "error": "非法路径"}
+        learn_root = self.config.vault / "07-Learn"
+        try:
+            target = (self.config.vault / path).resolve()
+            target.relative_to(learn_root.resolve())
+        except (ValueError, OSError):
+            return {"ok": False, "error": "路径越界"}
+        if not target.is_file():
+            return {"ok": False, "error": "文档不存在"}
+        sub_dir = target.parent.parent
+        return {
+            "ok": True,
+            "file": {
+                "sub": sub_dir.name,
+                "name": target.name,
+                "path": target.relative_to(self.config.vault).as_posix(),
+                "dir": "" if target.parent == sub_dir else target.parent.relative_to(sub_dir).as_posix(),
+                "isIndex": target.name == "_index.md",
+                "content": target.read_text("utf-8", errors="replace"),
+            },
+        }
+
+    def _kernel_docs_search(self, query: str) -> dict[str, Any]:
+        """学习文档全文搜索（大小写不敏感子串匹配，标题/正文都算）。"""
+        q = query.strip().lower()
+        if not q:
+            return {"ok": True, "results": []}
+        learn_root = self.config.vault / "07-Learn"
+        results: list[dict[str, Any]] = []
+        if learn_root.is_dir():
+            for sub_dir in sorted(learn_root.iterdir()):
+                if not sub_dir.is_dir():
+                    continue
+                for md in sorted(sub_dir.rglob("*.md")):
+                    if not md.is_file():
+                        continue
+                    hits: list[dict[str, Any]] = []
+                    for i, line in enumerate(md.read_text("utf-8", errors="replace").splitlines(), 1):
+                        if q in line.lower():
+                            hits.append({"no": i, "text": line.strip()[:220]})
+                            if len(hits) >= 5:
+                                break
+                    if hits:
+                        parent_rel = md.parent.relative_to(sub_dir)
+                        results.append({
+                            "sub": sub_dir.name,
+                            "name": md.name,
+                            "path": md.relative_to(self.config.vault).as_posix(),
+                            "dir": "" if parent_rel == Path(".") else parent_rel.as_posix(),
+                            "hits": hits,
+                        })
+                    if len(results) >= 30:
+                        break
+                if len(results) >= 30:
+                    break
+        return {"ok": True, "results": results}
 
     def _kernel_qa(self) -> dict[str, Any]:
         """全部问答日志（来自 03-Knowledge/*/qa-log.md，按子系统分组）。"""
@@ -2286,7 +2351,17 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             self._json(self._kernel_qa())
             return
         if path == "/api/kernel/docs":
-            self._json(self._kernel_docs())
+            query = urllib.parse.parse_qs(parsed.query)
+            doc_path = query.get("path", [""])[0].strip()
+            if doc_path:
+                self._json(self._kernel_doc(doc_path))
+            else:
+                self._json(self._kernel_docs())
+            return
+        if path == "/api/kernel/docs/search":
+            query = urllib.parse.parse_qs(parsed.query)
+            q = query.get("q", [""])[0].strip()
+            self._json(self._kernel_docs_search(q))
             return
         if path == "/api/kernel/quicknotes":
             self._json(self._kernel_quicknotes())
