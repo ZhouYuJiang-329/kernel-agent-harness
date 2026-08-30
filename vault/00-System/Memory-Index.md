@@ -11,7 +11,7 @@
 ## 当前学习焦点
 
 - **示例模块进度**：已建立三个示例知识节点，用于演示状态管理、调用关系和 Dashboard 展示。
-- **调度器路线图**：已基于 Linux 7.2-rc6 生成阅读指南（`learn/sched/sched_read_guide.md`），建立 87 个 unknown 节点和初始依赖图，待 kernel-code-analyzer 逐个深化。
+- **调度器路线图**：已基于 Linux 7.2-rc6 生成阅读指南（`07-Learn/sched/sched_read_guide.md`），建立 87 个 unknown 节点和初始依赖图，待 kernel-code-analyzer 逐个深化。
 - **测试模块 进度**：刚开始，入口函数 test_func_a 尚未分析
 
 ## 知识状态

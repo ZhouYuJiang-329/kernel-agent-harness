@@ -7,9 +7,9 @@
 
 | 名称 | 类型 | 状态 | 置信度 | 笔记 | 内部文档 | 更新日期 |
 |---|---|---|---:|---|---|---|
-| __schedule | function | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
-| schedule | function | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
-| pick_next_task | function | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| __schedule | function | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| schedule | function | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| pick_next_task | function | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | __pick_next_task | function | unknown | 0 | - | - | 2026-08-28 |
 | put_prev_task | function | unknown | 0 | - | - | 2026-08-28 |
 | set_next_task | function | unknown | 0 | - | - | 2026-08-28 |
@@ -24,7 +24,7 @@
 
 | 名称 | 类型 | 状态 | 置信度 | 笔记 | 内部文档 | 更新日期 |
 |---|---|---|---:|---|---|---|
-| context_switch | function | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| context_switch | function | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | switch_mm_irqs_off | function | unknown | 0 | - | - | 2026-08-28 |
 | switch_to | function | unknown | 0 | - | - | 2026-08-28 |
 | finish_task_switch | function | unknown | 0 | - | - | 2026-08-28 |
@@ -34,7 +34,7 @@
 
 | 名称 | 类型 | 状态 | 置信度 | 笔记 | 内部文档 | 更新日期 |
 |---|---|---|---:|---|---|---|
-| try_to_wake_up | function | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| try_to_wake_up | function | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | ttwu_queue | function | unknown | 0 | - | - | 2026-08-28 |
 | ttwu_do_activate | function | unknown | 0 | - | - | 2026-08-28 |
 | ttwu_do_wakeup | function | unknown | 0 | - | - | 2026-08-28 |
@@ -138,13 +138,13 @@
 
 | 名称 | 类型 | 状态 | 置信度 | 笔记 | 内部文档 | 更新日期 |
 |---|---|---|---:|---|---|---|
-| task_struct | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
-| sched_class | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
-| sched_entity | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| task_struct | struct | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| sched_class | struct | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| sched_entity | struct | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | sched_rt_entity | struct | unknown | 0 | - | - | 2026-08-28 |
 | sched_dl_entity | struct | unknown | 0 | - | - | 2026-08-28 |
-| rq | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
-| cfs_rq | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| rq | struct | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| cfs_rq | struct | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | rt_rq | struct | unknown | 0 | - | - | 2026-08-28 |
 | dl_rq | struct | unknown | 0 | - | - | 2026-08-28 |
 | rt_prio_array | struct | unknown | 0 | - | - | 2026-08-28 |
