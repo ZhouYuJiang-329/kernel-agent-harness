@@ -1,0 +1,7 @@
+{
+  "vault": "vault",
+  "dshRoot": "runtime/DeepSeekHarness",
+  "knowledgeHome": "runtime/DeepSeekHarness/home",
+  "cleanHome": "runtime/DeepSeekHarness/clean-home",
+  "python": "runtime/python/bin/python3"
+}

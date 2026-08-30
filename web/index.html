@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Boujoy Harness</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0a0a12">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="scene" aria-hidden="true">
+    <div class="scene-texture"></div>
+    <div class="scene-shard shard-a"></div>
+    <div class="scene-shard shard-b"></div>
+    <div class="scene-scribble">// BUILD YOUR OWN RULES //</div>
+  </div>
+
+  <div id="app" class="product-shell">
+    <aside class="global-rail" aria-label="主要导航">
+      <button class="brand" data-page="agent" aria-label="Boujoy Harness 首页">
+        <span class="brand-mark" aria-hidden="true">B</span>
+        <span class="brand-words"><b>BOUJOY</b><em>HARNESS</em></span>
+      </button>
+
+      <nav class="page-nav">
+        <button class="nav-cut active" data-page="agent"><span class="nav-number">01</span><strong>AGENT</strong><small>执行现场</small></button>
+        <button class="nav-cut" data-page="knowledge"><span class="nav-number">02</span><strong>知识库</strong><small>第二大脑</small></button>
+        <button class="nav-cut" data-page="experts"><span class="nav-number">03</span><strong>专家</strong><small>调用阵容</small></button>
+        <button class="nav-cut" data-page="styles"><span class="nav-number">04</span><strong>风格</strong><small>输出声线</small></button>
+        <button class="nav-cut" data-page="monitor"><span class="nav-number">05</span><strong>监控</strong><small>用量与轨迹</small></button>
+        <button class="nav-cut" data-page="news"><span class="nav-number">06</span><strong>新闻</strong><small>AI 动态与工具</small></button>
+      </nav>
+
+      <div class="rail-footer">
+        <button id="modeSwitch" class="mode-switch" type="button" aria-pressed="false">
+          <span class="mode-led"></span>
+          <span><b id="modeName">知识模式</b><small id="modeHint">VAULT 已连接</small></span>
+        </button>
+        <button id="settingsButton" class="rail-tool" type="button"><span>⚙</span>设置</button>
+      </div>
+    </aside>
+
+    <main class="main-stage">
+      <header class="top-strip">
+        <button id="mobileMenuButton" class="icon-tool mobile-menu-btn" type="button" aria-label="菜单" aria-expanded="false">☰</button>
+        <div class="page-identity"><span id="pageKicker">LIVE / 01</span><h1 id="pageTitle">AGENT 执行现场</h1></div>
+        <div class="top-actions">
+          <span id="serviceStatus" class="service-pill"><i></i>本地引擎连接中</span>
+          <button id="commandButton" class="icon-tool" title="命令面板" aria-label="命令面板">⌘</button>
+          <button id="themeButton" class="icon-tool" title="切换明暗主题" aria-label="切换明暗主题">◐</button>
+        </div>
+      </header>
+
+      <!-- Mobile drawer: page navigation for phones (hamburger menu) -->
+      <div id="mobileDrawer" class="mobile-drawer hidden">
+        <div class="mobile-drawer-panel">
+          <div class="mobile-drawer-head"><strong>BOUJOY</strong><button id="mobileDrawerClose" class="icon-tool" aria-label="关闭">×</button></div>
+          <nav class="mobile-drawer-nav">
+            <button class="mobile-nav-item" data-page="agent">⚡ Agent</button>
+            <button class="mobile-nav-item" data-page="knowledge">📚 知识库</button>
+            <button class="mobile-nav-item" data-page="experts">🧠 专家</button>
+            <button class="mobile-nav-item" data-page="styles">🎨 风格</button>
+            <button class="mobile-nav-item" data-page="monitor">📊 监控</button>
+            <button class="mobile-nav-item" data-page="news">📰 新闻</button>
+            <button class="mobile-nav-item" id="mobileNavSettings">⚙ 设置</button>
+            <button class="mobile-nav-item" id="mobileNavPair">📱 手机互联</button>
+            <button class="mobile-nav-item" id="mobileNavNewSession">＋ 新会话</button>
+          </nav>
+          <div class="mobile-drawer-sessions">
+            <div class="mobile-drawer-sess-head"><span>已有会话</span><b id="mobileSessionCount">0</b></div>
+            <div id="mobileSessionList" class="mobile-session-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone pairing guide dialog -->
+      <dialog id="pairDialog" class="boujoy-dialog pair-dialog">
+        <form method="dialog">
+          <header><div><p class="section-kicker">PHONE LINK</p><h2>手机互联</h2></div></header>
+          <div class="pair-body">
+            <div class="pair-step"><b>1</b><span>手机连上和这台 Mac 一样的 Wi-Fi</span></div>
+            <div class="pair-step"><b>2</b><span>浏览器打开</span><code id="pairUrl">加载中…</code></div>
+            <div class="pair-step"><b>3</b><span>输入访问码</span><code id="pairCode">…</code><button type="button" id="pairCopyCode" class="mini-cut">复制</button></div>
+            <p class="pair-note">首次输入后手机会记住。可"添加到主屏幕"当 App 用。</p>
+            <p class="pair-note" id="pairError"></p>
+          </div>
+          <footer><button value="cancel" class="primary-cut">完成</button></footer>
+        </form>
+      </dialog>
+
+      <section id="agentPage" class="page page-agent active" data-page-panel="agent">
+        <aside class="context-panel agent-context">
+          <div class="panel-label"><span>PROJECT TAPE</span><b id="sessionCount">0</b></div>
+          <button id="newSessionButton" class="primary-cut"><span>＋</span>新会话</button>
+          <button id="pickProjectButton" class="secondary-cut"><span>⌁</span>选择新项目</button>
+          <div class="field-label">当前工作区</div>
+          <button id="workspacePicker" class="workspace-picker"><span class="folder-icon">▰</span><span id="workspaceName">正在读取…</span><span>⌄</span></button>
+          <div id="workspaceMenu" class="pop-menu hidden"></div>
+          <div class="session-heading"><span>会话磁带</span><button id="refreshSessions" title="刷新">↻</button></div>
+          <input id="sessionSearch" class="session-search" placeholder="搜索会话内容…">
+          <div id="sessionList" class="session-list"><div class="skeleton-lines"></div></div>
+          <div class="session-tools">
+            <button id="renameSessionButton" class="text-tool"><span>✎</span>重命名</button>
+            <button id="forkSessionButton" class="text-tool"><span>⑂</span>分叉会话</button>
+          </div>
+          <div class="session-destructive"><button id="archiveSessionButton" class="text-tool"><span>⌫</span>归档</button><button id="deleteSessionButton" class="text-tool danger"><span>×</span>删除</button></div>
+        </aside>
+
+        <div class="agent-workbench">
+          <div class="agent-hero">
+            <div class="hero-stamp"><span>B</span></div>
+            <div><p id="agentEyebrow">KNOWLEDGE-LINKED AGENT</p><h2 id="agentHeadline">把想法变成行动。</h2></div>
+            <div id="runState" class="run-state idle"><i></i><span>待命</span></div>
+          </div>
+          <div id="thinkingStatus" class="thinking-status" aria-live="polite"><b>THINKING</b><span>分析上下文 → 核对约束 → 选择下一步</span></div>
+
+          <div id="emptyAgent" class="empty-agent">
+            <div class="burst" aria-hidden="true">✦</div>
+            <h3>从这里开工</h3>
+            <p id="starterDescription">选项目、发任务。知识模式会自动连接你的 Markdown 第二大脑。</p>
+            <div class="starter-grid">
+              <button id="starterPrimary" data-starter="读取当前项目上下文，告诉我最重要的下一步。">接着做上次项目 <span>↗</span></button>
+              <button id="starterSecondary" data-starter="基于我的知识库，整理一个可执行的方案。">调用第二大脑 <span>↗</span></button>
+              <button id="starterTertiary" data-page="experts">先选一位专家 <span>↗</span></button>
+            </div>
+          </div>
+          <div id="messageStream" class="message-stream" aria-live="polite"></div>
+
+          <div class="composer-wrap">
+            <div id="contextChips" class="context-chips"></div>
+            <div class="composer">
+              <div id="busyComposer" class="busy-composer hidden">
+                <span><i></i>任务运行中</span>
+                <div><button type="button" class="active" data-busy-mode="steer">↳ 引导当前任务</button><button type="button" data-busy-mode="queue">排到下一条</button></div>
+              </div>
+              <textarea id="promptInput" rows="1" placeholder="描述你要完成的事…"></textarea>
+              <div class="composer-bar">
+                <div class="composer-left">
+                  <button id="attachButton" class="composer-tool attach-tool" title="添加图片" aria-label="添加图片"><span>＋</span><small>图片</small></button>
+                  <input id="imageInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
+                  <select id="permissionSelect" class="inline-select" aria-label="权限模式">
+                    <option value="workspace-write">工作区写入</option>
+                    <option value="read-only">只读</option>
+                    <option value="danger-full-access">完全访问</option>
+                  </select>
+                  <select id="presetSelect" class="inline-select" aria-label="Agent 预设"><option value="">标准模式</option></select>
+                </div>
+                <div class="composer-right">
+                  <select id="modelSelect" class="inline-select model-select" aria-label="模型"><option>读取模型…</option></select>
+                  <button id="cancelButton" class="stop-button hidden" type="button">■ 停止</button>
+                  <button id="sendButton" class="send-button" type="button" aria-label="发送或停止">↑</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside id="activityPanel" class="activity-panel">
+          <div class="panel-label"><span>LIVE SIGNAL</span><button id="toggleActivity" title="收起">×</button></div>
+          <div class="signal-card"><small>当前目标</small><strong id="currentGoal">尚未设定</strong><div id="goalActions"><button id="goalButton">设定目标</button></div><div id="contextMeter" class="context-meter hidden"></div><button id="pendingInterruptBar" class="interrupt-bar hidden" type="button">⚠ Agent 正在等待你的审批/回答，点击处理</button><div class="capture-row"><button id="captureButton" type="button" title="让模型判断本次对话是否有长期价值，并按规则沉淀">⇣ 沉淀本次对话</button><span id="captureStatus" class="capture-status"></span></div></div>
+          <div class="activity-section"><h3>计划</h3><div id="planList" class="plan-list"><p class="muted">Agent 创建计划后会显示在这里。</p></div></div>
+          <div class="activity-section"><h3>任务队列</h3><div id="queueList" class="queue-list"><p class="muted">没有排队任务。</p></div></div>
+          <div class="activity-section"><h3>子代理</h3><div id="subagentList" class="subagent-list"><p class="muted">没有子代理。</p></div></div>
+          <div class="activity-section"><h3>运行记录</h3><div id="toolActivity" class="tool-activity"><p class="muted">工具调用将在这里实时展开。</p></div></div>
+        </aside>
+      </section>
+
+      <section id="knowledgePage" class="page page-knowledge" data-page-panel="knowledge">
+        <div class="knowledge-header">
+          <div><p class="section-kicker">LOCAL MARKDOWN / ONE SOURCE</p><h2>你的第二大脑，<br><span>正在生长。</span></h2></div>
+          <div class="knowledge-metrics"><article><b id="knowledgeFileCount">0</b><span>内容</span></article><article><b id="knowledgeProjectCount">0</b><span>项目</span></article><article><b id="knowledgeUpdatedCount">0</b><span>最近更新</span></article></div>
+        </div>
+        <div class="knowledge-toolbar">
+          <label class="search-cut"><span>⌕</span><input id="knowledgeSearch" placeholder="搜索标题、标签或正文…"><kbd>⌘ K</kbd></label>
+          <button id="knowledgeRefresh" class="mini-cut">↻ 同步</button>
+          <button id="knowledgeGraphButton" class="mini-cut">关系全景</button>
+          <button id="knowledgeHealthButton" class="mini-cut">健康中心</button>
+        </div>
+        <div id="knowledgeFilters" class="filter-tape">
+          <button class="active" data-filter="all">全部</button><button data-filter="project">项目</button><button data-filter="knowledge">知识</button><button data-filter="content">内容</button><button data-filter="prompt">提示词</button><button data-filter="business">商业</button><button data-filter="skill">Skills</button><button data-filter="media">视频</button>
+        </div>
+        <div class="knowledge-layout">
+          <div class="knowledge-focus">
+            <div class="section-row"><div><p class="section-kicker">IN PROGRESS</p><h3>当前工作</h3></div><button id="openActiveContext" class="link-cut">打开上下文 →</button></div>
+            <article id="focusCard" class="focus-card"><div class="skeleton-lines"></div></article>
+          </div>
+          <aside class="next-actions"><div class="section-row"><div><p class="section-kicker">WORKING CONTEXT</p><h3>下一步行动</h3></div></div><div id="nextActionList"></div></aside>
+        </div>
+        <div class="library-block">
+          <div class="section-row"><div><p class="section-kicker">RECENTLY CAPTURED</p><h3>知识卡片</h3></div><span id="knowledgeResultCount">0 条</span></div>
+          <div id="knowledgeGrid" class="knowledge-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
+        </div>
+      </section>
+
+      <section id="expertsPage" class="page page-experts" data-page-panel="experts">
+        <div class="collection-hero expert-hero">
+          <div><p class="section-kicker">CALL THE RIGHT BRAIN</p><h2>专家不是头像，<br><span>是可调用的方法。</span></h2><p>创建、组合并直接派发到 Agent。所有配置保存在本地 Markdown。</p></div>
+          <button id="addExpertButton" class="giant-add">＋<span>新增专家</span></button>
+        </div>
+        <div class="collection-toolbar"><label class="search-cut"><span>⌕</span><input id="expertSearch" placeholder="搜索专家…"></label><span id="expertCount">0 位专家</span></div>
+        <div id="expertGrid" class="expert-grid empty-collection"></div>
+      </section>
+
+      <section id="stylesPage" class="page page-styles" data-page-panel="styles">
+        <div class="collection-hero style-hero">
+          <div><p class="section-kicker">VOICE / FORM / RHYTHM</p><h2>让每一次输出，<br><span>有自己的声音。</span></h2><p>风格可以独立调用，也能和专家叠加。以后你可以一直往里加。</p></div>
+          <button id="addStyleButton" class="giant-add">＋<span>新增风格</span></button>
+        </div>
+        <div class="collection-toolbar"><label class="search-cut"><span>⌕</span><input id="styleSearch" placeholder="搜索风格…"></label><span id="styleCount">0 种风格</span></div>
+        <div id="styleGrid" class="style-grid empty-collection"></div>
+      </section>
+
+      <section id="monitorPage" class="page page-monitor" data-page-panel="monitor">
+        <div class="monitor-hero">
+          <div><p class="section-kicker">USAGE / TRAJECTORY / EFFORT</p><h2>看得见每一次<br><span>思考的成本。</span></h2><p>Token 用量、缓存命中、运行轨迹与推理强度，全部来自真实运行数据。</p></div>
+          <button id="monitorRefresh" class="mini-cut">↻ 刷新</button>
+        </div>
+        <div class="monitor-grid">
+          <article class="monitor-card token-card">
+            <div class="monitor-card-head"><h3>TOKEN 用量</h3><span id="tokenSessionLabel">当前会话</span></div>
+            <div class="token-figures">
+              <div><b id="tokenInput">—</b><span>输入</span></div>
+              <div><b id="tokenOutput">—</b><span>输出</span></div>
+              <div><b id="tokenCache">—</b><span>缓存读取</span></div>
+              <div><b id="tokenTotal">—</b><span>总计</span></div>
+            </div>
+            <div class="cache-hit-row"><span>缓存命中率</span><div class="cache-hit-track"><div id="cacheHitBar" class="cache-hit-fill" style="width:0%"></div></div><b id="cacheHitPct">0%</b></div>
+          </article>
+          <article class="monitor-card context-card">
+            <div class="monitor-card-head"><h3>上下文占用</h3><span id="contextLabel">实时</span></div>
+            <div id="monitorContextMeter" class="context-meter"></div>
+          </article>
+          <article class="monitor-card effort-card">
+            <div class="monitor-card-head"><h3>思考强度</h3><span>reasoning effort</span></div>
+            <div class="effort-control">
+              <select id="monitorEffortSelect" class="inline-select" aria-label="推理强度"><option value="">读取模型…</option></select>
+              <button id="monitorEffortApply" class="mini-cut">应用</button>
+            </div>
+            <p class="monitor-hint">切换后仅影响后续回答的推理深度，不影响已运行任务。</p>
+          </article>
+        </div>
+        <div class="monitor-card trajectory-card">
+          <div class="monitor-card-head"><h3>运行轨迹</h3><span id="trajectorySummary">—</span></div>
+          <div id="trajectoryList" class="trajectory-list"><p class="muted">加载会话后显示回合与工具调用轨迹。</p></div>
+        </div>
+      </section>
+
+      <section id="newsPage" class="page page-news" data-page-panel="news">
+        <div class="news-hero">
+          <div><p class="section-kicker">AI FEED / LAST 3 DAYS</p><h2>近三天，<br><span>AI 世界发生了什么。</span></h2><p>新闻与工具各 10 条，来自公开源，点击卡片直达原文。刷新即重新爬取。</p></div>
+          <div class="news-actions">
+            <button id="newsRefresh" class="mini-cut">↻ 刷新爬取</button>
+            <span id="newsUpdated" class="news-updated">—</span>
+          </div>
+        </div>
+        <div class="news-columns">
+          <div class="news-col">
+            <div class="news-col-head"><h3>AI 实时新闻</h3><span>NEWS</span></div>
+            <div id="newsList" class="news-list"><p class="muted">点击「刷新爬取」拉取近三天新闻。</p></div>
+          </div>
+          <div class="news-col">
+            <div class="news-col-head"><h3>工具与模型动向</h3><span>TOOLS</span></div>
+            <div id="toolsList" class="news-list"><p class="muted">主流模型与工具更新将显示在这里。</p></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+
+  <dialog id="recordDialog" class="boujoy-dialog">
+    <form method="dialog" id="recordForm">
+      <header><div><p id="recordKicker">NEW RECORD</p><h2 id="recordDialogTitle">新增专家</h2></div><button type="button" value="cancel" class="dialog-close" data-close-dialog="recordDialog" aria-label="关闭">×</button></header>
+      <input id="recordId" type="hidden"><input id="recordKind" type="hidden">
+      <label>名称<input id="recordName" required maxlength="80" placeholder="例如：产品战略专家"></label>
+      <label>一句话说明<input id="recordDescription" maxlength="180" placeholder="擅长什么，什么时候调用"></label>
+      <label>系统指令<textarea id="recordInstructions" required rows="10" placeholder="写下角色、判断标准、工作流程和输出要求…"></textarea></label>
+      <label class="check-row"><input id="recordEnabled" type="checkbox" checked><span>启用这个配置</span></label>
+      <footer><button type="button" value="cancel" class="ghost-button" data-close-dialog="recordDialog">取消</button><button type="submit" id="saveRecordButton" value="default" class="primary-cut">保存到 Markdown</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="dispatchDialog" class="boujoy-dialog dispatch-dialog">
+    <form method="dialog" id="dispatchForm">
+      <header><div><p>DISPATCH TO AGENT</p><h2 id="dispatchTitle">调用专家</h2></div><button type="button" value="cancel" class="dialog-close" data-close-dialog="dispatchDialog">×</button></header>
+      <input id="dispatchKind" type="hidden"><input id="dispatchId" type="hidden">
+      <div id="dispatchBadge" class="dispatch-badge"></div>
+      <label id="dispatchStyleWrap">叠加输出风格<select id="dispatchStyle"><option value="">不叠加风格</option></select></label>
+      <label>本次任务<textarea id="dispatchTask" required rows="7" placeholder="告诉它这次要解决什么…"></textarea></label>
+      <footer><button type="button" value="cancel" class="ghost-button" data-close-dialog="dispatchDialog">取消</button><button type="submit" id="confirmDispatch" value="default" class="primary-cut">送进 Agent →</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="goalDialog" class="boujoy-dialog goal-dialog">
+    <form id="goalForm">
+      <header><div><p>MISSION CONTROL</p><h2 id="goalDialogTitle">设定当前目标</h2></div><button type="button" class="dialog-close" data-close-dialog="goalDialog" aria-label="关闭">×</button></header>
+      <label>目标<textarea id="goalObjective" required rows="5" maxlength="1200" placeholder="写清楚最终要达到什么结果…"></textarea></label>
+      <label>最大回合（可选）<input id="goalRounds" type="number" min="1" max="100" placeholder="留空表示不限制"></label>
+      <p class="dialog-note">目标由 Harness 真实维护；首次保存会立即启动第一个目标回合。暂停、继续、完成与清除都可在右侧控制。</p>
+      <footer><button type="button" class="ghost-button" data-close-dialog="goalDialog">取消</button><button type="submit" class="primary-cut">保存目标</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="permissionDialog" class="boujoy-dialog permission-dialog">
+    <form id="permissionForm">
+      <header><div><p>ACCESS CONTROL</p><h2>确认完全访问</h2></div><button type="button" class="dialog-close" data-close-dialog="permissionDialog" aria-label="关闭">×</button></header>
+      <div class="permission-warning"><b>FULL ACCESS</b><p>Agent 将可以读写工作区之外的本机文件，并执行不受工作区限制的命令。这个选择会真正写入当前 Harness 会话。</p></div>
+      <label class="check-row"><input id="permissionAcknowledge" type="checkbox" required><span>我理解并确认本次权限升级</span></label>
+      <footer><button type="button" class="ghost-button" data-close-dialog="permissionDialog">取消</button><button type="submit" class="primary-cut danger-access">确认完全访问</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="deleteSessionDialog" class="boujoy-dialog delete-session-dialog">
+    <form id="deleteSessionForm">
+      <header><div><p>REMOVE SESSION</p><h2>删除这条会话？</h2></div><button type="button" class="dialog-close" data-close-dialog="deleteSessionDialog" aria-label="关闭">×</button></header>
+      <div class="permission-warning"><b id="deleteSessionName">当前会话</b><p>会话会从 Harness 列表移除，日志文件移到 macOS 废纸篓。它不会删除项目目录或知识库内容。</p></div>
+      <footer><button type="button" class="ghost-button" data-close-dialog="deleteSessionDialog">取消</button><button type="submit" class="primary-cut danger-access">移到废纸篓</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="readerDialog" class="reader-dialog">
+    <header><div><p id="readerPath"></p><h2 id="readerTitle"></h2></div><div><button id="readerBack" class="mini-cut hidden">← 返回</button><button id="readerDelete" class="mini-cut danger">移到废纸篓</button><button id="readerReveal" class="mini-cut">在 Finder 显示</button><button id="readerSend" class="mini-cut accent">交给 Agent</button><button id="readerClose" class="dialog-close">×</button></div></header>
+    <article id="readerBody" class="markdown-body"></article>
+  </dialog>
+
+  <dialog id="settingsDialog" class="boujoy-dialog settings-dialog">
+    <form method="dialog">
+      <header><div><p>LOCAL CONTROL</p><h2>产品设置</h2></div><button value="cancel" class="dialog-close">×</button></header>
+      <div class="settings-tabs"><button type="button" class="active" data-settings="general">通用</button><button type="button" data-settings="projects">项目</button><button type="button" data-settings="models">模型</button><button type="button" data-settings="presets">预设</button><button type="button" data-settings="skills">Skills</button></div>
+      <div id="settingsContent" class="settings-content"></div>
+      <footer><button value="cancel" class="primary-cut">完成</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="commandDialog" class="command-dialog">
+    <form method="dialog"><label><span>⌘</span><input id="commandSearch" placeholder="输入命令或页面名称…"></label><div id="commandList"></div></form>
+  </dialog>
+
+  <dialog id="graphDialog" class="feature-dialog">
+    <header><div><p>KNOWLEDGE ATLAS</p><h2>知识关系全景</h2></div><div class="graph-legend"><span><i></i>项目</span><span><i></i>知识</span><span><i></i>其他</span><button id="graphClose" class="dialog-close">×</button></div></header>
+    <div id="graphCanvas" class="graph-canvas"></div>
+  </dialog>
+
+  <dialog id="mediaDialog" class="feature-dialog media-dialog">
+    <header><div><p>LOCAL VIDEO</p><h2 id="mediaTitle">视频播放</h2></div><button id="mediaClose" class="dialog-close">×</button></header>
+    <video id="mediaPlayer" class="media-player" controls preload="metadata" playsinline></video>
+  </dialog>
+
+  <dialog id="healthDialog" class="feature-dialog health-dialog">
+    <header><div><p>VAULT HEALTH</p><h2>知识库健康中心</h2></div><button id="healthClose" class="dialog-close">×</button></header>
+    <div id="healthSummary" class="health-summary"></div>
+    <div id="healthDetails" class="health-details"></div>
+  </dialog>
+
+  <dialog id="interruptDialog" class="boujoy-dialog interrupt-dialog">
+    <form method="dialog" id="interruptForm">
+      <header><div><p id="interruptKicker">AGENT NEEDS YOU</p><h2 id="interruptTitle">需要确认</h2></div></header>
+      <div id="interruptBody" class="interrupt-body"></div>
+      <footer><button id="interruptReject" value="cancel" class="ghost-button">拒绝</button><button id="interruptAllow" value="default" class="primary-cut">允许一次</button></footer>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

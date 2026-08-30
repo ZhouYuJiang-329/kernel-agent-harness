@@ -1,0 +1,29 @@
+# Generated macOS app bundles and per-machine runtime configuration.
+dist/
+boujoy-config.json
+*.dSYM/
+
+# Local runtimes, vaults, state, caches, and credentials never belong in the
+# public source repository.
+runtime/
+vault/
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.mobileprovision
+*.key
+*.sqlite
+*.sqlite3
+*.db
+*.jsonl
+
+# Tooling and macOS noise.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+coverage/
+.DS_Store
+__MACOSX/
+*.log
