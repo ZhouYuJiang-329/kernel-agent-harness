@@ -275,22 +275,20 @@
           <div><p class="section-kicker">KERNEL LEARNING / DASHBOARD</p><h2>内核知识，<br><span>一眼看全。</span></h2><p>子系统进度、节点状态、依赖图规模与开放问题，来自 vault 实时统计。</p></div>
           <button id="kernelDashRefresh" class="mini-cut">↻ 刷新</button>
         </div>
-        <div id="kernelDashContent" class="kernel-dash-content"><p class="muted">加载中…</p></div>
 
-        <div class="kernel-graph-divider"><span class="kernel-graph-divider-label">节点列表 / NODES</span></div>
-        <div id="kernelNodesPanel" class="kernel-dash-content"><p class="muted">加载中…</p></div>
+        <nav class="kernel-tabs" aria-label="内核学习面板切换">
+          <button class="kernel-tab active" data-ktab="overview" type="button"><span class="kernel-tab-no">01</span>总览</button>
+          <button class="kernel-tab" data-ktab="graph" type="button"><span class="kernel-tab-no">02</span>调用图谱</button>
+          <button class="kernel-tab" data-ktab="nodes" type="button"><span class="kernel-tab-no">03</span>节点列表</button>
+          <button class="kernel-tab" data-ktab="qa" type="button"><span class="kernel-tab-no">04</span>问答日志</button>
+        </nav>
 
-        <div class="kernel-graph-divider"><span class="kernel-graph-divider-label">随时记 / QUICK NOTES</span></div>
-        <div id="kernelNotesPanel" class="kernel-dash-content"><p class="muted">加载中…</p></div>
-
-        <div class="kernel-graph-divider"><span class="kernel-graph-divider-label">问答日志 / QA LOG</span></div>
-        <div id="kernelQaPanel" class="kernel-dash-content"><p class="muted">加载中…</p></div>
-
-        <div class="kernel-graph-divider">
-          <span class="kernel-graph-divider-label">调用图谱 / CALL GRAPH</span>
+        <div id="kernelTabOverview" class="kernel-tab-panel active">
+          <div id="kernelDashContent" class="kernel-dash-content"><p class="muted">加载中…</p></div>
         </div>
 
-        <div class="kernel-graph-panel">
+        <div id="kernelTabGraph" class="kernel-tab-panel">
+          <div class="kernel-graph-panel">
           <div class="kernel-graph-toolbar">
             <select id="kernelGraphModeSelect" class="inline-select kg-mode-select" aria-label="模式">
               <option value="radial" selected>径向图谱</option>
@@ -326,9 +324,32 @@
           </div>
           <div id="kernelNodeDetail" class="kernel-node-detail hidden"></div>
           <div id="kernelGraphCanvas" class="kernel-graph-canvas"><p class="muted">输入函数名，从 kernel-graph 数据库（420 万条调用边）查询调用关系。</p></div>
+          </div>
+        </div>
+
+        <div id="kernelTabNodes" class="kernel-tab-panel">
+          <div id="kernelNodesPanel" class="kernel-dash-content"><p class="muted">加载中…</p></div>
+        </div>
+
+        <div id="kernelTabQa" class="kernel-tab-panel">
+          <div id="kernelQaPanel" class="kernel-dash-content"><p class="muted">加载中…</p></div>
         </div>
       </section>
     </main>
+  </div>
+
+  <button id="kernelNoteFab" class="kernel-note-fab" type="button" title="随时记：随手记录问题、线索、待整理">✎ 随时记</button>
+  <div id="kernelNotePopup" class="kernel-note-popup" role="dialog" aria-label="随时记" aria-hidden="true">
+    <div class="kernel-note-popup-head">
+      <span class="kernel-note-popup-title">随时记 / QUICK NOTES</span>
+      <button id="kernelNotePopupClose" class="kernel-note-popup-close" type="button" aria-label="关闭">×</button>
+    </div>
+    <textarea id="kernelNotePopupInput" class="kernel-note-popup-input" placeholder="随手记一条：问题、线索、待整理…（Enter 保存）" spellcheck="false"></textarea>
+    <div class="kernel-note-popup-actions">
+      <button id="kernelNotePopupSave" class="mini-cut" type="button">保存</button>
+      <small class="kernel-note-popup-hint">写入 vault / 00-System / Quick-Notes.md</small>
+    </div>
+    <div id="kernelNotePopupRecent" class="kernel-note-popup-recent"></div>
   </div>
 
   <div id="toastRegion" class="toast-region" aria-live="polite"></div>

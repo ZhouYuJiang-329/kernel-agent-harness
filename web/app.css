@@ -1401,3 +1401,76 @@ html[data-theme="dark"] .page-kernel-dash {
 .kernel-qa-head small { margin-left: auto; color: var(--muted); font-size: 10px; }
 .kernel-qa-q { margin: 0 0 4px; font-size: 13px; }
 .kernel-qa-c { margin: 0; color: var(--muted); font-size: 12px; }
+
+/* ── 内核学习：标签页导航 ── */
+.kernel-tabs {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  margin: 0 0 26px; padding: 0 0 18px;
+  border-bottom: 2px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.kernel-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 14px; border: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  color: inherit; background: transparent; cursor: pointer;
+  font: 900 12px var(--display); letter-spacing: .04em;
+  transition: .15s ease;
+}
+.kernel-tab-no { font: 1000 9px var(--mono); color: var(--muted); letter-spacing: .1em; }
+.kernel-tab:hover { border-color: var(--cyan); color: var(--cyan); }
+.kernel-tab.active {
+  color: var(--ink); background: var(--acid); border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--blue); transform: translate(-1px, -1px);
+}
+.kernel-tab.active .kernel-tab-no { color: var(--blue); }
+.kernel-tab-panel { display: none; }
+.kernel-tab-panel.active { display: block; }
+
+/* ── 随时记：全局浮动入口 + 弹框 ── */
+.kernel-note-fab {
+  position: fixed; right: 22px; bottom: 22px; z-index: 60;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 18px; border: 2px solid var(--ink); color: var(--ink);
+  background: var(--acid); box-shadow: 6px 6px 0 var(--pink);
+  font: 1000 13px var(--display); letter-spacing: .06em; cursor: pointer;
+  transform: rotate(-1.5deg);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+}
+.kernel-note-fab:hover {
+  background: var(--cyan); box-shadow: 4px 4px 0 var(--blue);
+  transform: translate(2px, 2px) rotate(-1deg);
+}
+.kernel-note-popup {
+  position: fixed; right: 22px; bottom: 84px; z-index: 65;
+  display: none; width: min(400px, calc(100vw - 28px));
+  max-height: min(560px, calc(100vh - 120px)); overflow-y: auto;
+  padding: 16px; border: 2px solid var(--ink);
+  background: color-mix(in srgb, var(--panel-solid) 96%, transparent);
+  box-shadow: 8px 8px 0 var(--blue);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
+}
+.kernel-note-popup.open { display: block; }
+.kernel-note-popup-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.kernel-note-popup-title { font: 1000 11px var(--mono); letter-spacing: .14em; color: var(--acid); }
+.kernel-note-popup-close {
+  margin-left: auto; width: 26px; height: 26px; line-height: 1;
+  border: 1.5px solid color-mix(in srgb, currentColor 45%, transparent);
+  background: transparent; color: inherit; cursor: pointer; font-size: 15px;
+}
+.kernel-note-popup-close:hover { color: var(--ink); background: var(--pink); }
+.kernel-note-popup-input {
+  width: 100%; min-height: 96px; max-height: 240px; box-sizing: border-box;
+  padding: 10px 12px; resize: vertical;
+  border: 1.5px solid color-mix(in srgb, currentColor 45%, transparent);
+  background: color-mix(in srgb, var(--panel-solid) 92%, transparent);
+  color: inherit; font: 700 13px var(--mono); line-height: 1.6;
+}
+.kernel-note-popup-input:focus { outline: none; border-color: var(--cyan); }
+.kernel-note-popup-actions { display: flex; align-items: center; gap: 12px; margin: 10px 0 12px; }
+.kernel-note-popup-actions .mini-cut { border-color: var(--ink); color: var(--ink); background: var(--acid); box-shadow: 3px 3px 0 var(--pink); }
+.kernel-note-popup-actions .mini-cut:hover { background: var(--cyan); box-shadow-color: var(--blue); }
+.kernel-note-popup-hint { color: var(--muted); font: 700 10px var(--mono); }
+.kernel-note-popup-recent-head {
+  margin-bottom: 6px; padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  color: var(--muted); font: 1000 9px var(--mono); letter-spacing: .14em;
+}

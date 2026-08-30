@@ -908,7 +908,7 @@ function showPage(page) {
   if (page === "styles") loadRecords("style");
   if (page === "monitor") renderMonitor();
   if (page === "news") loadNews();
-  if (page === "kernel-dash") { renderKernelDashboard(); renderKernelNodes(); renderKernelNotes(); renderKernelQa(); }
+  if (page === "kernel-dash") { renderKernelDashboard(); switchKernelTab(kernelTab); }
 }
 
 async function setMode(mode) {
@@ -3365,9 +3365,8 @@ function bindEvents() {
   });
   $("#kernelDashRefresh").addEventListener("click", async () => {
     await renderKernelDashboard();
-    renderKernelNodes();
-    renderKernelNotes();
-    renderKernelQa();
+    if (kernelTab === "nodes") renderKernelNodes();
+    if (kernelTab === "qa") renderKernelQa();
     toast("仪表盘已刷新");
   });
   $("#kernelGraphGo").addEventListener("click", queryKernelGraph);
@@ -3387,6 +3386,18 @@ function bindEvents() {
   $("#kernelGraphBack").addEventListener("click", kernelGraphGoBack);
   $("#kernelGraphForward").addEventListener("click", kernelGraphGoForward);
   $("#kernelPathDst").addEventListener("keydown", event => { if (event.key === "Enter") queryKernelGraph(); });
+  $$("[data-ktab]").forEach(button => button.addEventListener("click", () => switchKernelTab(button.dataset.ktab)));
+  $("#kernelNoteFab").addEventListener("click", () => toggleKernelNotePopup());
+  $("#kernelNotePopupClose").addEventListener("click", () => toggleKernelNotePopup(false));
+  $("#kernelNotePopupSave").addEventListener("click", addKernelNoteFromPopup);
+  $("#kernelNotePopupInput").addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); addKernelNoteFromPopup(); }
+  });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") toggleKernelNotePopup(false); });
+  document.addEventListener("click", event => {
+    const popup = $("#kernelNotePopup");
+    if (popup?.classList.contains("open") && !popup.contains(event.target) && event.target !== $("#kernelNoteFab")) toggleKernelNotePopup(false);
+  });
   $("#graphCanvas").addEventListener("click", event => { const node = event.target.closest("[data-graph-path]"); if (node) { $("#graphDialog").close(); openReader(node.dataset.graphPath); } });
   $("#healthDetails").addEventListener("click", event => { if (event.target.closest("[data-cleanup-all]")) cleanupReported(); });
   $("#addExpertButton").addEventListener("click", () => openRecordDialog("expert"));
@@ -4070,6 +4081,15 @@ async function queryKernelGraph() {
 
 let kernelNodesFilter = "all";
 let kernelQaFilter = "all";
+let kernelTab = "overview";
+
+function switchKernelTab(tab) {
+  kernelTab = tab;
+  $$(".kernel-tab-panel").forEach(panel => panel.classList.toggle("active", panel.id === `kernelTab${tab[0].toUpperCase()}${tab.slice(1)}`));
+  $$("[data-ktab]").forEach(button => button.classList.toggle("active", button.dataset.ktab === tab));
+  if (tab === "nodes") renderKernelNodes();
+  if (tab === "qa") renderKernelQa();
+}
 
 async function renderKernelNodes() {
   const panel = $("#kernelNodesPanel");
@@ -4096,22 +4116,38 @@ async function renderKernelNodes() {
   }
 }
 
-async function addKernelNote() {
-  const text = ($("#kernelNoteInput").value || "").trim();
-  if (!text) return;
+async function addKernelNoteFromPopup() {
+  const input = $("#kernelNotePopupInput");
+  const text = (input?.value || "").trim();
+  if (!text) { toast("先写点内容再保存", true); return; }
   try {
     await jsonFetch("/api/kernel/quicknotes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add", text }) });
-    renderKernelNotes();
+    input.value = "";
+    toast("已记入随时记 ✎");
+    renderKernelNotePopup();
   } catch (error) { toast(error.message, true); }
 }
 
-async function renderKernelNotes() {
-  const panel = $("#kernelNotesPanel");
-  if (!panel) return;
+function toggleKernelNotePopup(open) {
+  const popup = $("#kernelNotePopup");
+  if (!popup) return;
+  const show = open ?? !popup.classList.contains("open");
+  popup.classList.toggle("open", show);
+  popup.setAttribute("aria-hidden", String(!show));
+  if (show) {
+    renderKernelNotePopup();
+    const input = $("#kernelNotePopupInput");
+    input?.focus();
+  }
+}
+
+async function renderKernelNotePopup() {
+  const list = $("#kernelNotePopupRecent");
+  if (!list) return;
   try {
     const data = await jsonFetch("/api/kernel/quicknotes", { cache: "no-store" });
-    if (!data?.ok) { panel.innerHTML = `<p class="muted">${escapeHtml(data?.error || "读取失败")}</p>`; return; }
-    const notes = data.notes || [];
+    if (!data?.ok) { list.innerHTML = `<p class="muted">读取失败</p>`; return; }
+    const notes = (data.notes || []).slice().reverse();
     const rows = notes.map(n =>
       `<div class="kernel-note-row ${n.done ? "done" : ""}">
         <button class="kernel-note-toggle" data-qn="${escapeHtml(n.id)}" title="完成/恢复">${n.done ? "☑" : "☐"}</button>
@@ -4119,20 +4155,18 @@ async function renderKernelNotes() {
         <small class="kernel-note-meta">${escapeHtml(n.date)}</small>
         <button class="kernel-note-del" data-qn="${escapeHtml(n.id)}" title="删除">×</button>
       </div>`).join("");
-    panel.innerHTML = `<div class="kernel-notes-add"><input id="kernelNoteInput" type="text" placeholder="随手记一条（如：待确认 do_fork 的返回值处理）" spellcheck="false"><button id="kernelNoteAdd" class="mini-cut">添加</button></div>
-      <div class="kernel-notes-list">${rows || '<p class="muted">暂无笔记。</p>'}</div>`;
-    $("#kernelNoteAdd").addEventListener("click", addKernelNote);
-    $("#kernelNoteInput").addEventListener("keydown", e => { if (e.key === "Enter") addKernelNote(); });
-    panel.querySelectorAll("[data-qn]").forEach(btn => btn.addEventListener("click", async () => {
+    list.innerHTML = `<div class="kernel-note-popup-recent-head">全部笔记 (${notes.length})</div>
+      <div class="kernel-notes-list">${rows || '<p class="muted">暂无笔记，随手记一条吧。</p>'}</div>`;
+    list.querySelectorAll("[data-qn]").forEach(btn => btn.addEventListener("click", async () => {
       const id = btn.dataset.qn;
       const action = btn.classList.contains("kernel-note-del") ? "delete" : "toggle";
       try {
         await jsonFetch("/api/kernel/quicknotes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, id }) });
-        renderKernelNotes();
+        renderKernelNotePopup();
       } catch (error) { toast(error.message, true); }
     }));
   } catch (error) {
-    panel.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+    list.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }
 }
 
