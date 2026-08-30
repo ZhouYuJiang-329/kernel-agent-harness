@@ -1508,6 +1508,232 @@ class BoujoyHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001 — 网关边界，返回错误 JSON
             return {"ok": False, "error": f"kernel-graph 深链查询失败: {exc}"}
 
+    def _kernel_path(self, src: str, dst: str, depth: int = 10) -> dict[str, Any]:
+        """双函数最短路径：在调用图上 BFS（向上/向下双向），返回一条路径。"""
+        import sqlite3
+        from collections import deque
+        db = r"D:\claude配置\kernel-graph\linux7.2rc6.db"
+        if not os.path.isfile(db):
+            return {"ok": False, "error": f"kernel-graph 数据库不存在: {db}"}
+        try:
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("PRAGMA query_only = ON")
+                cur = conn.cursor()
+                def resolve(name: str) -> str:
+                    rows = cur.execute("SELECT name FROM functions WHERE name = ? ORDER BY name LIMIT 5", (name,)).fetchall()
+                    if rows:
+                        return rows[0][0]
+                    rows = cur.execute("SELECT name FROM functions WHERE name LIKE ? ORDER BY name LIMIT 5", (f"%{name}%",)).fetchall()
+                    return rows[0][0] if rows else name
+                s, d = resolve(src.strip()), resolve(dst.strip())
+                depth = max(1, min(int(depth), 12))
+                queue = deque([[s]])
+                visited = {s}
+                found = None
+                while queue:
+                    path = queue.popleft()
+                    if len(path) > depth:
+                        break
+                    current = path[-1]
+                    nxt = []
+                    nxt += [r[0] for r in cur.execute("SELECT DISTINCT callee FROM calls WHERE caller = ?", (current,)).fetchall()]
+                    nxt += [r[0] for r in cur.execute("SELECT DISTINCT caller FROM calls WHERE callee = ?", (current,)).fetchall()]
+                    for nb in nxt:
+                        if nb == d:
+                            found = path + [nb]
+                            break
+                        if nb not in visited:
+                            visited.add(nb)
+                            queue.append(path + [nb])
+                    if found:
+                        break
+                if not found:
+                    return {"ok": True, "src": s, "dst": d, "path": [], "note": f"未找到 {s} → {d} 的路径（深度 {depth} 内）"}
+                # 补 file:line
+                enriched = []
+                for name in found:
+                    r = cur.execute("SELECT file, line FROM functions WHERE name = ? ORDER BY line LIMIT 1", (name,)).fetchone()
+                    enriched.append({"name": name, "file": r[0] if r else "", "line": r[1] if r else 0})
+                links = [{"source": found[i], "target": found[i + 1]} for i in range(len(found) - 1)]
+                return {"ok": True, "src": s, "dst": d, "path": enriched, "links": links, "hops": len(found) - 1}
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"路径查询失败: {exc}"}
+
+    def _kernel_node(self, symbol: str) -> dict[str, Any]:
+        """节点详情：定义、调用者/被调用者计数、结构体字段、字段赋值。"""
+        import sqlite3
+        db = r"D:\claude配置\kernel-graph\linux7.2rc6.db"
+        if not os.path.isfile(db):
+            return {"ok": False, "error": f"kernel-graph 数据库不存在: {db}"}
+        try:
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("PRAGMA query_only = ON")
+                cur = conn.cursor()
+                name = symbol.strip()
+                defs = cur.execute("SELECT file, line FROM functions WHERE name = ? ORDER BY line LIMIT 5", (name,)).fetchall()
+                callers = cur.execute("SELECT COUNT(*) FROM calls WHERE callee = ?", (name,)).fetchone()[0]
+                callees = cur.execute("SELECT COUNT(*) FROM calls WHERE caller = ?", (name,)).fetchone()[0]
+                struct_fields = [
+                    {"field": f, "type": t, "isFuncPtr": bool(p), "line": l}
+                    for f, t, p, l in cur.execute(
+                        "SELECT field, type, is_func_ptr, line FROM structs WHERE struct_name = ? ORDER BY line LIMIT 60", (name,)
+                    ).fetchall()
+                ]
+                assignments = [
+                    {"field": f, "struct": st, "file": fl, "line": l}
+                    for f, st, fl, l in cur.execute(
+                        """SELECT fa.field, s.struct_name, fa.file, fa.line
+                           FROM field_assignments fa
+                           JOIN structs s ON s.field = fa.field
+                           WHERE fa.function = ? LIMIT 40""", (name,)
+                    ).fetchall()
+                ]
+                return {
+                    "ok": True,
+                    "name": name,
+                    "defs": [{"file": f, "line": l} for f, l in defs],
+                    "callers": callers,
+                    "callees": callees,
+                    "structFields": struct_fields,
+                    "assignments": assignments,
+                    "isStruct": len(struct_fields) > 0,
+                }
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"节点详情查询失败: {exc}"}
+
+    def _kernel_structs(self, symbol: str, limit: int = 60) -> dict[str, Any]:
+        """结构体图谱：symbol 为结构体 → 字段 → 赋值函数；为函数 → 它赋值的字段及其结构体。"""
+        import sqlite3
+        db = r"D:\claude配置\kernel-graph\linux7.2rc6.db"
+        if not os.path.isfile(db):
+            return {"ok": False, "error": f"kernel-graph 数据库不存在: {db}"}
+        try:
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("PRAGMA query_only = ON")
+                cur = conn.cursor()
+                name = symbol.strip()
+                nodes: dict[str, dict[str, Any]] = {}
+                links: list[dict[str, Any]] = []
+                struct_fields = cur.execute(
+                    "SELECT field, type, is_func_ptr FROM structs WHERE struct_name = ? ORDER BY line LIMIT ?", (name, limit)
+                ).fetchall()
+                if struct_fields:
+                    # 结构体 → 字段 → 赋值函数
+                    nodes[name] = {"id": name, "name": name, "kind": "struct", "root": True}
+                    for field, ftype, is_ptr in struct_fields:
+                        fid = f"{name}.{field}"
+                        nodes[fid] = {"id": fid, "name": field, "kind": "field", "type": ftype, "isFuncPtr": bool(is_ptr)}
+                        links.append({"source": name, "target": fid, "kind": "field"})
+                        for fn, in cur.execute(
+                            "SELECT DISTINCT function FROM field_assignments WHERE field = ? LIMIT 10", (field,)
+                        ).fetchall():
+                            if fn not in nodes and fn != name:
+                                nodes[fn] = {"id": fn, "name": fn, "kind": "function"}
+                            if fn != name:
+                                links.append({"source": fid, "target": fn, "kind": "assign"})
+                else:
+                    # 函数 → 赋值的字段（含结构体）
+                    nodes[name] = {"id": name, "name": name, "kind": "function", "root": True}
+                    for field, st, fl, ln in cur.execute(
+                        """SELECT DISTINCT fa.field, s.struct_name, fa.file, fa.line
+                           FROM field_assignments fa
+                           JOIN structs s ON s.field = fa.field
+                           WHERE fa.function = ? LIMIT ?""", (name, limit)
+                    ).fetchall():
+                        if st and st not in nodes:
+                            nodes[st] = {"id": st, "name": st, "kind": "struct"}
+                            links.append({"source": name, "target": st, "kind": "assigns"})
+                        fid = f"{st}.{field}"
+                        if fid not in nodes:
+                            nodes[fid] = {"id": fid, "name": field, "kind": "field", "file": fl, "line": ln}
+                        if st:
+                            links.append({"source": st, "target": fid, "kind": "field"})
+                            links.append({"source": fid, "target": name, "kind": "assign"})
+                return {"ok": True, "symbol": name, "root": name, "nodes": list(nodes.values()), "links": links}
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"结构体图谱查询失败: {exc}"}
+
+    def _kernel_hot(self, limit: int = 50) -> dict[str, Any]:
+        """最被调用函数排行。"""
+        import sqlite3
+        db = r"D:\claude配置\kernel-graph\linux7.2rc6.db"
+        if not os.path.isfile(db):
+            return {"ok": False, "error": f"kernel-graph 数据库不存在: {db}"}
+        try:
+            conn = sqlite3.connect(db)
+            try:
+                conn.execute("PRAGMA query_only = ON")
+                cur = conn.cursor()
+                rows = cur.execute(
+                    "SELECT callee, COUNT(*) AS c FROM calls GROUP BY callee ORDER BY c DESC LIMIT ?", (min(int(limit), 100),)
+                ).fetchall()
+                ranked = []
+                for callee, cnt in rows:
+                    r = cur.execute("SELECT file, line FROM functions WHERE name = ? ORDER BY line LIMIT 1", (callee,)).fetchone()
+                    ranked.append({"name": callee, "calls": cnt, "file": r[0] if r else "", "line": r[1] if r else 0})
+                return {"ok": True, "ranked": ranked}
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"热函数排行失败: {exc}"}
+
+    def _kernel_export(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """把当前图谱/链/路径导出为 Markdown 笔记，写入 vault/07-Learn/kernel-graph/。"""
+        mode = str(payload.get("mode", "graph"))
+        symbol = str(payload.get("symbol", "unknown")).strip() or "unknown"
+        nodes = payload.get("nodes") or []
+        links = payload.get("links") or []
+        chain = payload.get("chain") or payload.get("path") or []
+        try:
+            out_dir = self.config.vault / "07-Learn" / "kernel-graph"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            safe = re.sub(r"[^\w\-]+", "_", symbol)[:60]
+            out_file = out_dir / f"{safe}-{time.strftime('%Y%m%d-%H%M%S')}.md"
+            lines = [f"# {symbol} 调用图谱（kernel-graph 导出）", "", f"> 模式：{mode} · 导出时间：{time.strftime('%Y-%m-%d %H:%M')}", ""]
+            if chain:
+                lines.append("## 调用链")
+                lines.append("")
+                lines.append("```text")
+                for i, item in enumerate(chain):
+                    name = item.get("name", item) if isinstance(item, dict) else item
+                    file = item.get("file", "") if isinstance(item, dict) else ""
+                    line = item.get("line", "") if isinstance(item, dict) else ""
+                    loc = f"  ({file}:{line})" if file else ""
+                    lines.append(("  " * i) + ("" if i == 0 else "└─ ") + name + loc)
+                lines.append("```")
+                lines.append("")
+            if links:
+                lines.append("## 边（调用关系）")
+                lines.append("")
+                lines.append("| 调用方 | 被调用方 |")
+                lines.append("|---|---|")
+                seen_edges = set()
+                for link in links:
+                    key = (link.get("source"), link.get("target"))
+                    if key in seen_edges:
+                        continue
+                    seen_edges.add(key)
+                    lines.append(f"| {key[0]} | {key[1]} |")
+                lines.append("")
+            lines.append("## 数据来源")
+            lines.append("")
+            lines.append("- kernel-graph 数据库（Linux 7.2-rc6 静态调用图）")
+            lines.append("- 图谱交互页：Boujoy「07 内核学习 → 调用图谱」")
+            lines.append("")
+            out_file.write_text("\n".join(lines), encoding="utf-8")
+            return {"ok": True, "path": str(out_file.relative_to(self.config.vault))}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"导出失败: {exc}"}
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
@@ -1785,7 +2011,8 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             symbol = query.get("symbol", [""])[0].strip()
             depth = int(query.get("depth", ["1"])[0] or "1")
-            self._json(self._kernel_graph(symbol, depth=depth))
+            fanout = int(query.get("fanout", ["25"])[0] or "25")
+            self._json(self._kernel_graph(symbol, depth=depth, fanout=fanout))
             return
         if path == "/api/kernel/chain":
             query = urllib.parse.parse_qs(parsed.query)
@@ -1793,6 +2020,28 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             direction = query.get("dir", ["down"])[0]
             depth = int(query.get("depth", ["8"])[0] or "8")
             self._json(self._kernel_chain(symbol, direction=direction, depth=depth))
+            return
+        if path == "/api/kernel/path":
+            query = urllib.parse.parse_qs(parsed.query)
+            src = query.get("src", [""])[0].strip()
+            dst = query.get("dst", [""])[0].strip()
+            depth = int(query.get("depth", ["10"])[0] or "10")
+            self._json(self._kernel_path(src, dst, depth=depth))
+            return
+        if path == "/api/kernel/node":
+            query = urllib.parse.parse_qs(parsed.query)
+            symbol = query.get("symbol", [""])[0].strip()
+            self._json(self._kernel_node(symbol))
+            return
+        if path == "/api/kernel/structs":
+            query = urllib.parse.parse_qs(parsed.query)
+            symbol = query.get("symbol", [""])[0].strip()
+            self._json(self._kernel_structs(symbol))
+            return
+        if path == "/api/kernel/hot":
+            query = urllib.parse.parse_qs(parsed.query)
+            limit = int(query.get("limit", ["50"])[0] or "50")
+            self._json(self._kernel_hot(limit))
             return
         match = re.fullmatch(r"/api/harness/(knowledge|clean)/(events\.mux|events\.host)", path)
         if match:
@@ -1868,6 +2117,13 @@ class BoujoyHandler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin", "")
         if origin and not self._request_origin_allowed(origin):
             self._error(403, "cross-origin write blocked")
+            return
+        if path == "/api/kernel/export":
+            try:
+                payload = json.loads(body or b"{}")
+                self._json(self._kernel_export(payload))
+            except (ValueError, json.JSONDecodeError) as exc:
+                self._error(400, str(exc))
             return
         if path == "/api/app/restart":
             # Agent-safe restart path. The Harness cannot reliably quit and

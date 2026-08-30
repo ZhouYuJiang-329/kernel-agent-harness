@@ -1318,3 +1318,36 @@ html[data-theme="dark"] .page-kernel-dash {
   font: 1000 10px var(--mono); letter-spacing: .16em;
   transform: rotate(-1deg);
 }
+
+.kernel-node-detail {
+  margin: 0 0 12px; border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
+  border-left: 4px solid var(--pink);
+}
+.kernel-node-detail-inner { position: relative; padding: 14px 16px; }
+.kernel-node-detail-close {
+  position: absolute; right: 8px; top: 8px; width: 24px; height: 24px;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  background: transparent; color: inherit; cursor: pointer; font-size: 14px; line-height: 1;
+}
+.kernel-node-detail-inner h4 { margin: 0 0 10px; font: 1000 16px var(--pixel); color: var(--acid); }
+.kernel-node-detail-inner h5 { margin: 14px 0 6px; font: 800 11px var(--mono); letter-spacing: .1em; color: var(--muted); }
+.knd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.knd-grid div { padding: 8px 10px; border: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+.knd-grid b { display: block; font-size: 10px; color: var(--muted); font-weight: 800; letter-spacing: .08em; }
+.knd-grid small { font-size: 12px; word-break: break-all; }
+.knd-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.knd-table th { text-align: left; color: var(--muted); font-size: 10px; padding: 4px 8px; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+.knd-table td { padding: 4px 8px; border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent); }
+.knd-table code { color: var(--cyan); font-family: var(--mono); font-size: 11px; }
+.kernel-hot-list { padding: 6px 10px; }
+.kernel-hot-row {
+  display: grid; grid-template-columns: 30px 1fr auto minmax(180px, 1.2fr); gap: 10px;
+  align-items: baseline; padding: 7px 10px; cursor: pointer;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+}
+.kernel-hot-row:hover { background: color-mix(in srgb, var(--acid) 8%, transparent); }
+.kernel-hot-row b { color: var(--pink); font: 900 12px var(--mono); }
+.kernel-hot-row code { color: var(--acid); font-family: var(--mono); font-size: 12px; }
+.kernel-hot-row span { color: var(--muted); font-size: 11px; }
+.kernel-hot-row small { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
