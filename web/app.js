@@ -220,6 +220,33 @@ function stripMarkdown(value = "") {
     .replace(/\s+/g, " ").trim();
 }
 
+if (typeof mermaid !== "undefined") {
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    themeVariables: {
+      background: "#0d1015",
+      primaryColor: "#12151b",
+      primaryTextColor: "#f5efdf",
+      primaryBorderColor: "#d2ff00",
+      lineColor: "#32e4d2",
+      secondaryColor: "#2439ff",
+      secondaryTextColor: "#f5efdf",
+      secondaryBorderColor: "#32e4d2",
+      tertiaryColor: "#0d1015",
+      tertiaryTextColor: "#f5efdf",
+      tertiaryBorderColor: "#ff2b8b",
+      clusterBkg: "#12151b",
+      clusterBorder: "#8f928f",
+      edgeLabelBackground: "#12151b",
+      nodeTextColor: "#f5efdf",
+      titleColor: "#f5efdf",
+      fontFamily: "SFMono-Regular, Menlo, Monaco, monospace"
+    }
+  });
+}
+
 function markdown(value = "") {
   const codeBlocks = [];
   const tableBlocks = [];
@@ -243,7 +270,7 @@ function markdown(value = "") {
       const cellHtml = cell => cell
         .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
         .replace(/`([^`]+)`/g, "<code>$1</code>")
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => `<a href="${safeHttpHref(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => `<a href="${safeHttpHref(href)}" data-href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`);
       const html = `<div class="markdown-table"><table><thead><tr>${header.map((h, i) => `<th${align[i] ? ` style="text-align:${align[i]}"` : ""}>${cellHtml(h)}</th>`).join("")}</tr></thead><tbody>${lines.slice(2).map(row => `<tr>${parseRow(row).map((cell, i) => `<td${align[i] ? ` style="text-align:${align[i]}"` : ""}>${cellHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
       tableBlocks.push(html);
       return `\n@@TABLE${tableBlocks.length - 1}@@\n`;
@@ -260,7 +287,7 @@ function markdown(value = "") {
     .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => `<a href="${safeHttpHref(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => `<a href="${safeHttpHref(href)}" data-href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`)
     .replace(/\n{2,}/g, "</p><p>")
     .replace(/\n/g, "<br>");
   text = `<p>${text}</p>`
@@ -3390,6 +3417,8 @@ function bindEvents() {
   $("#kernelNoteFab").addEventListener("click", () => toggleKernelNotePopup());
   $("#kernelNotePopupClose").addEventListener("click", () => toggleKernelNotePopup(false));
   $("#kernelNotePopupSave").addEventListener("click", addKernelNoteFromPopup);
+  $("#kernelMermaidDialog").addEventListener("click", event => { if (event.target === $("#kernelMermaidDialog")) $("#kernelMermaidDialog").close(); });
+  $("#kernelMermaidDialog").addEventListener("close", () => { const body = $("#kernelMermaidDialogBody"); if (body) body.innerHTML = ""; });
   $("#kernelNotePopupInput").addEventListener("keydown", event => {
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); addKernelNoteFromPopup(); }
   });
@@ -4089,6 +4118,7 @@ function switchKernelTab(tab) {
   $$("[data-ktab]").forEach(button => button.classList.toggle("active", button.dataset.ktab === tab));
   if (tab === "nodes") renderKernelNodes();
   if (tab === "qa") renderKernelQa();
+  if (tab === "docs") renderKernelDocs();
 }
 
 async function renderKernelNodes() {
@@ -4192,6 +4222,127 @@ async function renderKernelQa() {
   } catch (error) {
     panel.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }
+}
+
+let kernelDocsData = null;
+let kernelDocsCurrent = null;
+
+async function renderKernelDocs() {
+  if (!kernelDocsData) {
+    try {
+      const data = await jsonFetch("/api/kernel/docs", { cache: "no-store" });
+      if (!data?.ok) throw new Error(data?.error || "读取失败");
+      kernelDocsData = data;
+    } catch (error) {
+      const tree = $("#kernelDocsTree");
+      const reader = $("#kernelDocsReader");
+      if (tree) tree.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+      if (reader) reader.innerHTML = "";
+      return;
+    }
+  }
+  const subsystems = kernelDocsData.subsystems || [];
+  const allFiles = subsystems.flatMap(s => s.files.map(f => ({ ...f, sub: s.sub })));
+  if (!kernelDocsCurrent || !allFiles.some(f => f.path === kernelDocsCurrent.path)) {
+    const first = subsystems.find(s => s.files.some(f => !f.isIndex)) || subsystems[0];
+    const target = first?.files.find(f => !f.isIndex) || first?.files[0];
+    kernelDocsCurrent = target ? { sub: first.sub, path: target.path } : null;
+  }
+  renderKernelDocsTree();
+  renderKernelDocReader(allFiles);
+}
+
+function renderKernelDocsTree() {
+  const tree = $("#kernelDocsTree");
+  if (!tree) return;
+  const subsystems = kernelDocsData?.subsystems || [];
+  tree.innerHTML = subsystems.map(sub => `
+    <div class="kernel-docs-sub">
+      <div class="kernel-docs-sub-title">${escapeHtml(sub.sub)}<small>${sub.files.length}</small></div>
+      ${sub.files.map(f => `
+        <button class="kernel-docs-file ${kernelDocsCurrent?.path === f.path ? "active" : ""}"
+          data-doc-sub="${escapeHtml(sub.sub)}" data-doc-path="${escapeHtml(f.path)}" type="button">
+          ${f.isIndex ? '<span class="kernel-docs-badge">入口</span>' : ""}<span class="kernel-docs-file-name">${escapeHtml(f.name)}</span>
+        </button>`).join("")}
+    </div>`).join("") || '<p class="muted">07-Learn 下暂无笔记。</p>';
+  tree.querySelectorAll("[data-doc-path]").forEach(button => button.addEventListener("click", () => {
+    kernelDocsCurrent = { sub: button.dataset.docSub, path: button.dataset.docPath };
+    renderKernelDocsTree();
+    renderKernelDocReader((kernelDocsData?.subsystems || []).flatMap(s => s.files.map(f => ({ ...f, sub: s.sub }))));
+  }));
+}
+
+function renderKernelDocReader(allFiles) {
+  const reader = $("#kernelDocsReader");
+  if (!reader) return;
+  const file = allFiles?.find(f => f.path === kernelDocsCurrent?.path);
+  if (!file) {
+    reader.innerHTML = '<p class="muted">从左侧选择一篇学习笔记。</p>';
+    return;
+  }
+  reader.innerHTML = `
+    <div class="kernel-docs-crumb">${escapeHtml(file.sub)} <span class="kernel-docs-crumb-slash">/</span> ${escapeHtml(file.name)}${file.isIndex ? ' <span class="kernel-docs-badge">入口索引</span>' : ""}</div>
+    <div class="kernel-docs-content">${markdown(file.content)}</div>`;
+  wireKernelDocLinks(reader, file.path, allFiles);
+  renderKernelMermaid(reader);
+  reader.scrollTop = 0;
+}
+
+function wireKernelDocLinks(root, currentPath, allFiles) {
+  const currentDir = String(currentPath).replace(/[^/]*$/, "");
+  root.querySelectorAll("a[data-href]").forEach(a => {
+    const href = (a.getAttribute("data-href") || "").trim();
+    if (!href || /^(https?:|#|mailto:)/i.test(href)) return;
+    const target = href.split("#")[0];
+    if (!target.endsWith(".md")) return;
+    const resolved = (currentDir + target).replace(/\/+/g, "/");
+    const match = allFiles.find(f => f.path === resolved || f.path.endsWith("/" + target));
+    if (!match) return;
+    a.setAttribute("href", "#");
+    a.removeAttribute("target");
+    a.classList.add("kernel-doc-link");
+    a.title = `打开 ${match.name}`;
+    a.addEventListener("click", event => {
+      event.preventDefault();
+      kernelDocsCurrent = { sub: match.sub, path: match.path };
+      renderKernelDocsTree();
+      renderKernelDocReader(allFiles);
+    });
+  });
+}
+
+async function renderKernelMermaid(root) {
+  if (typeof mermaid === "undefined") return;
+  const blocks = [...root.querySelectorAll('.code-block code[data-lang="mermaid"]')];
+  for (let i = 0; i < blocks.length; i++) {
+    const code = blocks[i];
+    const block = code.closest(".code-block");
+    if (!block) continue;
+    const source = code.textContent;
+    const figure = document.createElement("figure");
+    figure.className = "kernel-mermaid-figure";
+    figure.innerHTML = `<div class="kernel-mermaid-wrap" data-km="${i}"><p class="muted">渲染中…</p></div>`;
+    block.replaceWith(figure);
+    try {
+      const { svg } = await mermaid.render(`km-${i}-${Date.now()}`, source);
+      const wrap = figure.querySelector(`[data-km="${i}"]`);
+      if (!wrap) continue;
+      wrap.innerHTML = svg;
+      wrap.classList.add("rendered");
+      wrap.title = "点击放大查看";
+      wrap.addEventListener("click", () => openKernelMermaidFull(svg));
+    } catch (error) {
+      figure.innerHTML = `<pre class="kernel-mermaid-fallback">${escapeHtml(source)}</pre>`;
+    }
+  }
+}
+
+function openKernelMermaidFull(svg) {
+  const dialog = $("#kernelMermaidDialog");
+  const body = $("#kernelMermaidDialogBody");
+  if (!dialog || !body) return;
+  body.innerHTML = svg;
+  dialog.showModal();
 }
 
 function renderKernelDashboard() {

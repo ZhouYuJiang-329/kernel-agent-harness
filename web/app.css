@@ -1474,3 +1474,82 @@ html[data-theme="dark"] .page-kernel-dash {
   border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
   color: var(--muted); font: 1000 9px var(--mono); letter-spacing: .14em;
 }
+
+/* ── 内核学习：学习文档 ── */
+.kernel-docs-layout {
+  display: grid; grid-template-columns: 250px minmax(0, 1fr);
+  gap: 18px; align-items: start;
+}
+@media (max-width: 900px) { .kernel-docs-layout { grid-template-columns: 1fr; } }
+.kernel-docs-tree {
+  position: sticky; top: 16px;
+  max-height: calc(100vh - 200px); overflow-y: auto;
+  padding: 12px; border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
+}
+.kernel-docs-sub { margin-bottom: 14px; }
+.kernel-docs-sub-title {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 6px; padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  color: var(--acid); font: 1000 11px var(--mono); letter-spacing: .14em;
+}
+.kernel-docs-sub-title small { color: var(--muted); font-size: 9px; }
+.kernel-docs-file {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 6px 8px; margin: 2px 0; border: 0; text-align: left;
+  background: transparent; color: inherit; cursor: pointer;
+  font: 700 12px var(--mono);
+}
+.kernel-docs-file:hover { background: color-mix(in srgb, var(--cyan) 12%, transparent); color: var(--cyan); }
+.kernel-docs-file.active { background: var(--acid); color: var(--ink); }
+.kernel-docs-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kernel-docs-badge {
+  flex: none; padding: 1px 5px; color: var(--ink);
+  background: var(--pink); font: 1000 8px var(--mono); letter-spacing: .08em;
+}
+.kernel-docs-reader {
+  min-width: 0; padding: 4px 2px 40px;
+}
+.kernel-docs-crumb {
+  margin-bottom: 18px; padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  color: var(--muted); font: 1000 11px var(--mono); letter-spacing: .1em;
+}
+.kernel-docs-crumb-slash { color: var(--pink); }
+.kernel-docs-content { max-width: 880px; line-height: 1.75; }
+.kernel-docs-content h1, .kernel-docs-content h2, .kernel-docs-content h3,
+.kernel-docs-content h4, .kernel-docs-content h5, .kernel-docs-content h6 {
+  margin: 1.6em 0 .5em; line-height: 1.25; color: var(--text);
+  font-family: var(--pixel); font-weight: 1000; letter-spacing: 0;
+}
+.kernel-docs-content h1 { font-size: 26px; color: var(--acid); }
+.kernel-docs-content h2 { font-size: 21px; color: var(--yellow); padding-bottom: 6px; border-bottom: 2px solid color-mix(in srgb, currentColor 20%, transparent); }
+.kernel-docs-content h3 { font-size: 17px; color: var(--cyan); }
+.kernel-docs-content p { margin: .7em 0; font-size: 13.5px; }
+.kernel-docs-content blockquote {
+  margin: 1em 0; padding: 10px 14px;
+  border-left: 4px solid var(--blue);
+  background: color-mix(in srgb, var(--panel-solid) 78%, transparent);
+  color: color-mix(in srgb, currentColor 78%, transparent);
+}
+.kernel-docs-content code { padding: 1px 5px; background: color-mix(in srgb, var(--ink-soft) 90%, transparent); color: var(--cyan); font-family: var(--mono); font-size: .92em; }
+.kernel-docs-content a { color: var(--acid); text-decoration: underline; text-underline-offset: 3px; }
+.kernel-docs-content a.kernel-doc-link { cursor: pointer; text-decoration-style: dashed; }
+.kernel-mermaid-figure {
+  margin: 18px 0; padding: 10px;
+  border: 2px solid color-mix(in srgb, var(--acid) 45%, transparent);
+  background: var(--panel-solid);
+  box-shadow: 5px 5px 0 var(--blue);
+}
+.kernel-mermaid-wrap { overflow: auto; max-height: 70vh; cursor: zoom-in; }
+.kernel-mermaid-wrap.rendered { cursor: zoom-in; }
+.kernel-mermaid-wrap svg { display: block; margin: 0 auto; max-width: none; }
+.kernel-mermaid-fallback {
+  margin: 0; padding: 12px; overflow: auto; white-space: pre;
+  color: var(--muted); font: 700 11px var(--mono);
+}
+.kernel-mermaid-dialog { border: 3px solid var(--ink); background: var(--panel-solid); box-shadow: 10px 10px 0 var(--pink); padding: 0; width: min(94vw, 1200px); }
+.kernel-mermaid-dialog::backdrop { background: rgba(5, 7, 10, .8); }
+.kernel-mermaid-dialog-body { max-height: 88vh; overflow: auto; padding: 18px; cursor: zoom-out; }
+.kernel-mermaid-dialog-body svg { display: block; margin: 0 auto; max-width: none; }

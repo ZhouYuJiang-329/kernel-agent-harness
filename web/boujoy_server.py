@@ -1849,6 +1849,30 @@ class BoujoyHandler(BaseHTTPRequestHandler):
                     })
         return {"ok": True, "nodes": nodes}
 
+    def _kernel_docs(self) -> dict[str, Any]:
+        """学习文档：扫描 vault/07-Learn/{sub}/**/*.md，返回 {subsystems: [{sub, files}]}。"""
+        learn_root = self.config.vault / "07-Learn"
+        subsystems: list[dict[str, Any]] = []
+        if learn_root.is_dir():
+            for sub_dir in sorted(learn_root.iterdir()):
+                if not sub_dir.is_dir():
+                    continue
+                files: list[dict[str, Any]] = []
+                for md in sorted(sub_dir.rglob("*.md")):
+                    if not md.is_file():
+                        continue
+                    rel = md.relative_to(self.config.vault).as_posix()
+                    files.append({
+                        "name": md.name,
+                        "path": rel,
+                        "content": md.read_text("utf-8", errors="replace"),
+                        "isIndex": md.name == "_index.md",
+                    })
+                if files:
+                    files.sort(key=lambda f: (not f["isIndex"], f["name"]))
+                    subsystems.append({"sub": sub_dir.name, "files": files})
+        return {"ok": True, "subsystems": subsystems}
+
     def _kernel_qa(self) -> dict[str, Any]:
         """全部问答日志（来自 03-Knowledge/*/qa-log.md，按子系统分组）。"""
         vault = self.config.vault
@@ -2260,6 +2284,9 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/kernel/qa":
             self._json(self._kernel_qa())
+            return
+        if path == "/api/kernel/docs":
+            self._json(self._kernel_docs())
             return
         if path == "/api/kernel/quicknotes":
             self._json(self._kernel_quicknotes())

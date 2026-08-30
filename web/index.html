@@ -281,6 +281,7 @@
           <button class="kernel-tab" data-ktab="graph" type="button"><span class="kernel-tab-no">02</span>调用图谱</button>
           <button class="kernel-tab" data-ktab="nodes" type="button"><span class="kernel-tab-no">03</span>节点列表</button>
           <button class="kernel-tab" data-ktab="qa" type="button"><span class="kernel-tab-no">04</span>问答日志</button>
+          <button class="kernel-tab" data-ktab="docs" type="button"><span class="kernel-tab-no">05</span>学习文档</button>
         </nav>
 
         <div id="kernelTabOverview" class="kernel-tab-panel active">
@@ -333,6 +334,13 @@
 
         <div id="kernelTabQa" class="kernel-tab-panel">
           <div id="kernelQaPanel" class="kernel-dash-content"><p class="muted">加载中…</p></div>
+        </div>
+
+        <div id="kernelTabDocs" class="kernel-tab-panel">
+          <div class="kernel-docs-layout">
+            <aside class="kernel-docs-tree" id="kernelDocsTree"><p class="muted">加载中…</p></aside>
+            <div class="kernel-docs-reader" id="kernelDocsReader"><p class="muted">从左侧选择一篇学习笔记。</p></div>
+          </div>
         </div>
       </section>
     </main>
@@ -446,7 +454,12 @@
     </form>
   </dialog>
 
+  <dialog id="kernelMermaidDialog" class="kernel-mermaid-dialog">
+    <div class="kernel-mermaid-dialog-body" id="kernelMermaidDialogBody"></div>
+  </dialog>
+
   <script src="vendor/d3.min.js"></script>
+  <script src="vendor/mermaid.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
