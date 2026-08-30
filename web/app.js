@@ -3376,6 +3376,8 @@ function bindEvents() {
   $("#kgModeHot").addEventListener("click", () => setKernelGraphMode("hot"));
   $("#kernelGraphExpand").addEventListener("click", expandKernelGraph);
   $("#kernelGraphExport").addEventListener("click", exportKernelGraph);
+  $("#kernelGraphBack").addEventListener("click", kernelGraphGoBack);
+  $("#kernelGraphForward").addEventListener("click", kernelGraphGoForward);
   $("#kernelPathDst").addEventListener("keydown", event => { if (event.key === "Enter") queryKernelGraph(); });
   $("#graphCanvas").addEventListener("click", event => { const node = event.target.closest("[data-graph-path]"); if (node) { $("#graphDialog").close(); openReader(node.dataset.graphPath); } });
   $("#healthDetails").addEventListener("click", event => { if (event.target.closest("[data-cleanup-all]")) cleanupReported(); });
@@ -3450,6 +3452,62 @@ function monitorSessionLabel() {
 
 let kernelGraphMode = "radial";
 let currentKernelGraph = null; // 当前图谱结果（导出/展开用）
+let kernelGraphHistory = [];   // 后退栈
+let kernelGraphFuture = [];    // 前进栈
+let kernelGraphLastState = null;
+let kernelGraphNavigating = false;
+
+function kernelGraphCaptureState() {
+  return {
+    mode: kernelGraphMode,
+    symbol: ($("#kernelGraphQuery").value || "").trim(),
+    dst: ($("#kernelPathDst").value || "").trim(),
+    dir: $("#kernelChainDir")?.value || "down",
+    depth: $("#kernelGraphDepth")?.value || "2",
+    chainDepth: $("#kernelChainDepth")?.value || "8",
+  };
+}
+// 每次新查询前调用：把上一个已渲染状态压入后退栈（导航恢复时跳过）
+function kernelGraphNoteHistory() {
+  if (kernelGraphNavigating) { kernelGraphNavigating = false; return; }
+  if (!kernelGraphLastState) return;
+  const cur = kernelGraphCaptureState();
+  if (JSON.stringify(cur) !== JSON.stringify(kernelGraphLastState)) {
+    kernelGraphHistory.push(kernelGraphLastState);
+    if (kernelGraphHistory.length > 50) kernelGraphHistory.shift();
+    kernelGraphFuture = [];
+  }
+}
+function kernelGraphRemember() {
+  kernelGraphLastState = kernelGraphCaptureState();
+  updateKernelGraphNav();
+}
+function kernelGraphGoBack() {
+  if (!kernelGraphHistory.length) return;
+  kernelGraphFuture.unshift(kernelGraphLastState || kernelGraphCaptureState());
+  kernelGraphNavigating = true;
+  kernelGraphApplyState(kernelGraphHistory.pop());
+}
+function kernelGraphGoForward() {
+  if (!kernelGraphFuture.length) return;
+  kernelGraphHistory.push(kernelGraphLastState || kernelGraphCaptureState());
+  kernelGraphNavigating = true;
+  kernelGraphApplyState(kernelGraphFuture.shift());
+}
+function kernelGraphApplyState(state) {
+  setKernelGraphMode(state.mode || "radial");
+  $("#kernelGraphQuery").value = state.symbol || "";
+  $("#kernelPathDst").value = state.dst || "";
+  $("#kernelChainDir").value = state.dir || "down";
+  $("#kernelGraphDepth").value = state.depth || "2";
+  $("#kernelChainDepth").value = state.chainDepth || "8";
+  queryKernelGraph();
+}
+function updateKernelGraphNav() {
+  const back = $("#kernelGraphBack"), fwd = $("#kernelGraphForward");
+  if (back) back.disabled = !kernelGraphHistory.length;
+  if (fwd) fwd.disabled = !kernelGraphFuture.length;
+}
 
 function setKernelGraphMode(mode) {
   kernelGraphMode = mode;
@@ -3556,6 +3614,7 @@ function renderKernelChainSVG(canvas, data) {
 }
 
 async function queryKernelChain() {
+  kernelGraphNoteHistory();
   const canvas = $("#kernelGraphCanvas");
   const symbol = ($("#kernelGraphQuery").value || "").trim();
   if (!symbol) { canvas.innerHTML = '<p class="muted">请输入函数名。</p>'; return; }
@@ -3567,12 +3626,14 @@ async function queryKernelChain() {
     if (!data?.ok) { canvas.innerHTML = `<p class="muted">${escapeHtml(data?.error || "查询失败")}</p>`; return; }
     currentKernelGraph = data;
     renderKernelChainSVG(canvas, data);
+    kernelGraphRemember();
   } catch (error) {
     canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }
 }
 
 async function queryKernelPath() {
+  kernelGraphNoteHistory();
   const canvas = $("#kernelGraphCanvas");
   const src = ($("#kernelGraphQuery").value || "").trim();
   const dst = ($("#kernelPathDst").value || "").trim();
@@ -3585,6 +3646,7 @@ async function queryKernelPath() {
     const items = (data.path || []).map((p, i) => ({ ...p, level: i }));
     const meta = data.hops ? `${data.hops} 跳路径：${data.src} → ${data.dst}` : (data.note || "未找到路径");
     renderKernelLinearChain(canvas, items, meta, (n) => { $("#kernelGraphQuery").value = n.name; queryKernelPath(); });
+    kernelGraphRemember();
   } catch (error) {
     canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }
@@ -3646,6 +3708,7 @@ function renderKernelStructSVG(canvas, data) {
 }
 
 async function queryKernelStruct() {
+  kernelGraphNoteHistory();
   const canvas = $("#kernelGraphCanvas");
   const symbol = ($("#kernelGraphQuery").value || "").trim();
   if (!symbol) { canvas.innerHTML = '<p class="muted">请输入结构体或函数名。</p>'; return; }
@@ -3655,6 +3718,7 @@ async function queryKernelStruct() {
     if (!data?.ok) { canvas.innerHTML = `<p class="muted">${escapeHtml(data?.error || "查询失败")}</p>`; return; }
     currentKernelGraph = data;
     renderKernelStructSVG(canvas, data);
+    kernelGraphRemember();
   } catch (error) {
     canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }
@@ -3679,6 +3743,7 @@ function renderKernelHot(canvas, data) {
 }
 
 async function loadKernelHot() {
+  kernelGraphNoteHistory();
   const canvas = $("#kernelGraphCanvas");
   canvas.innerHTML = '<p class="muted">统计最热函数中…</p>';
   try {
@@ -3686,6 +3751,7 @@ async function loadKernelHot() {
     if (!data?.ok) { canvas.innerHTML = `<p class="muted">${escapeHtml(data?.error || "查询失败")}</p>`; return; }
     currentKernelGraph = data;
     renderKernelHot(canvas, data);
+    kernelGraphRemember();
   } catch (error) {
     canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }
@@ -3846,6 +3912,7 @@ async function queryKernelGraph() {
   if (kernelGraphMode === "path") return queryKernelPath();
   if (kernelGraphMode === "struct") return queryKernelStruct();
   if (kernelGraphMode === "hot") return loadKernelHot();
+  kernelGraphNoteHistory();
   const canvas = $("#kernelGraphCanvas");
   const symbol = ($("#kernelGraphQuery").value || "").trim();
   if (!symbol) { canvas.innerHTML = '<p class="muted">请输入函数名。</p>'; return; }
@@ -3862,6 +3929,7 @@ async function queryKernelGraph() {
     data.nodes.forEach(n => { n.linkCount = degree[n.id] || 0; });
     renderKernelGraphSVG(canvas, data);
     showKernelNodeDetail(data.root || data.symbol);
+    kernelGraphRemember();
   } catch (error) {
     canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }

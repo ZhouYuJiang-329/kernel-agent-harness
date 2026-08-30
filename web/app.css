@@ -1351,3 +1351,7 @@ html[data-theme="dark"] .page-kernel-dash {
 .kernel-hot-row code { color: var(--acid); font-family: var(--mono); font-size: 12px; }
 .kernel-hot-row span { color: var(--muted); font-size: 11px; }
 .kernel-hot-row small { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.kg-nav-spacer { flex: 1 1 0; }
+.kg-nav { min-width: 40px; font: 900 14px var(--mono); }
+.kg-nav:disabled { opacity: .35; cursor: not-allowed; }
