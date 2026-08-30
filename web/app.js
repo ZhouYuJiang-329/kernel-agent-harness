@@ -2427,7 +2427,7 @@ async function loadPresets() {
 }
 
 async function selectPreset() {
-  if (!state.sessionId) return;
+  try { await ensureSession(); } catch { return; }
   try { await rpc("agentPreset.select", { sessionId: state.sessionId, agentPreset: $("#presetSelect").value }); await refreshSessions({ quiet: true }); toast("Agent 预设已切换"); }
   catch (error) { toast(error.message, true); }
 }
@@ -2991,6 +2991,7 @@ async function loadSettings(tab = "general") {
       const items = unpackList(value, ["presets", "items"]);
       content.innerHTML = items.map(item => `<div class="setting-card"><strong>${escapeHtml(item.name || item.id)}${item.isDefault ? " · 默认" : ""}</strong><small>${escapeHtml(item.description || "Agent 预设")}</small><div class="setting-actions"><button data-preset-action="select:${escapeHtml(item.id)}">用于当前会话</button><button data-preset-action="read:${escapeHtml(item.id)}">查看</button><button data-preset-action="copy:${escapeHtml(item.id)}">复制为自定义</button>${item.trust === "user" ? `<button data-preset-action="open:${escapeHtml(item.id)}">打开文件</button><button data-preset-action="remove:${escapeHtml(item.id)}">删除</button>` : ""}</div></div>`).join("") || '<p class="muted">没有 Agent 预设。</p>';
   } else {
+      await ensureSession();
       const value = await rpc("skill.list", { sessionId: state.sessionId });
       const items = unpackList(value, ["skills", "items"]);
       content.innerHTML = items.map(item => `<div class="setting-card"><strong>${escapeHtml(item.name || item.id || item)}</strong><small>${escapeHtml(item.description || item.path || "Skill")}</small></div>`).join("") || '<p class="muted">没有可用 Skills。</p>';
@@ -3021,9 +3022,22 @@ async function workspaceAction(action, id) {
   } catch (error) { toast(error.message, true); }
 }
 
+// Session-scoped RPCs (skill.list, agentPreset.select, ...) reject a null
+// sessionId on the engine side. When the settings surface is opened before
+// any conversation exists, mint a blank session so those tabs work.
+async function ensureSession() {
+  if (state.sessionId) return state.sessionId;
+  const payload = state.workspaceId ? { workspaceId: state.workspaceId } : {};
+  const value = await rpc("session.create", payload);
+  const createdId = value.id || value.sessionId || value.session?.id || value.session?.sessionId;
+  if (!createdId) throw new Error("Harness 没有返回新会话 ID");
+  state.sessionId = createdId;
+  return createdId;
+}
+
 async function presetAction(action, id) {
   try {
-    if (action === "select") { await rpc("agentPreset.select", { sessionId: state.sessionId, agentPreset: id }); await loadPresets(); }
+    if (action === "select") { await ensureSession(); await rpc("agentPreset.select", { sessionId: state.sessionId, agentPreset: id }); await loadPresets(); }
     if (action === "read") {
       const value = await rpc("agentPreset.read", { agentPreset: id });
       $("#readerPath").textContent = `AGENT PRESET / ${id}`; $("#readerTitle").textContent = value.name || id; $("#readerDelete").classList.add("hidden"); $("#readerBody").innerHTML = markdown(value.content); $("#readerDialog").showModal();
