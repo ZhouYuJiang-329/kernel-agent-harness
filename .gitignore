@@ -3,10 +3,9 @@ dist/
 boujoy-config.json
 *.dSYM/
 
-# Local runtimes, vaults, state, caches, and credentials never belong in the
+# Local runtimes, state, caches, and credentials never belong in the
 # public source repository.
 runtime/
-vault/
 .env
 .env.*
 !.env.example
@@ -18,6 +17,10 @@ vault/
 *.sqlite3
 *.db
 *.jsonl
+
+# The kernel workspace vault IS the knowledge base: it is versioned,
+# not ignored. (The upstream template ignored vault/; this fork tracks it.)
+# vault/
 
 # Tooling and macOS noise.
 __pycache__/
