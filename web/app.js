@@ -3459,37 +3459,40 @@ function renderKernelDashboard() {
           [sub.unknown, "#64748b", "unknown"],
           [sub.questioned, "#ef4444", "questioned"],
         ].filter(([n]) => n > 0).map(([n, c, label]) => `<span style="width:${(n / total * 100).toFixed(1)}%;background:${c}" title="${label} ${n}"></span>`).join("");
-        return `<div class="kernel-sub-card">
+        const legend = [
+          [sub.mastered, "#22c55e", "m"],
+          [sub.exploring, "#f59e0b", "e"],
+          [sub.unknown, "#64748b", "u"],
+          [sub.questioned, "#ef4444", "q"],
+        ].map(([n, c, label]) => `<span><i class="kernel-dot" style="background:${c}"></i>${label} <b>${n}</b></span>`).join("");
+        return `<div class="kernel-sub-card" style="--kernel-accent:var(--acid)">
           <div class="kernel-sub-head"><strong>${escapeHtml(sub.name)}</strong><small>${sub.nodes} 节点 · ${sub.edges} 边 · ${sub.qa} 问答</small></div>
           <div class="kernel-sub-bar">${segs || '<span style="width:100%;background:#334155"></span>'}</div>
-          <div class="kernel-sub-stats">
-            <span>m <b>${sub.mastered}</b></span><span>e <b>${sub.exploring}</b></span><span>u <b>${sub.unknown}</b></span><span>q <b>${sub.questioned}</b></span>
-            <span class="kernel-avg">平均置信度 <b>${sub.avgConf}</b></span>
-          </div>
+          <div class="kernel-sub-stats">${legend}<span class="kernel-avg">平均置信度 ${sub.avgConf}</span></div>
         </div>`;
       }).join("") || '<p class="muted">暂无子系统。可用 init_module.py 初始化第一个子系统。</p>';
 
       const recentList = (data.recent || []).map(r => `<li><code>${escapeHtml(r.func)}</code> <span class="muted">${escapeHtml(r.subsystem)} · ${escapeHtml(r.date)}</span></li>`).join("") || '<li class="muted">暂无分析记录</li>';
 
-      const qItems = (q.items || []).slice(0, 4).map(i => `<li><code>${escapeHtml(i.id)}</code> [${escapeHtml(i.priority)}] ${escapeHtml(i.question)}</li>`).join("") || '<li class="muted">暂无开放问题</li>';
+      const qItems = (q.items || []).slice(0, 4).map(i => `<li><code>${escapeHtml(i.id)}</code> <span class="muted">[${escapeHtml(i.priority)}]</span> ${escapeHtml(i.question)}</li>`).join("") || '<li class="muted">暂无开放问题</li>';
 
-      const journalList = (data.journal || []).map(j => `<li><b>${escapeHtml(j.date)}</b> <span class="muted">${escapeHtml(j.summary || "…")}</span></li>`).join("") || '<li class="muted">暂无日志</li>';
+      const journalList = (data.journal || []).map(j => `<li><code>${escapeHtml(j.date)}</code> <span class="muted">${escapeHtml(j.summary || "…")}</span></li>`).join("") || '<li class="muted">暂无日志</li>';
 
       content.innerHTML = `
         <div class="kernel-summary">
-          <div class="kernel-sum-item"><b>${subs.length}</b><span>子系统</span></div>
-          <div class="kernel-sum-item"><b>${totalNodes}</b><span>知识节点</span></div>
-          <div class="kernel-sum-item"><b>${totalEdges}</b><span>确认调用边</span></div>
-          <div class="kernel-sum-item"><b>${q.critical || 0}/${q.medium || 0}/${q.low || 0}</b><span>开放问题 C/M/L</span></div>
+          <div class="kernel-sum-item" style="--kernel-accent:var(--cyan)" data-ghost="01"><b>${subs.length}</b><span>子系统</span></div>
+          <div class="kernel-sum-item" style="--kernel-accent:var(--acid)" data-ghost="02"><b>${totalNodes}</b><span>知识节点</span></div>
+          <div class="kernel-sum-item" style="--kernel-accent:var(--blue)" data-ghost="03"><b>${totalEdges}</b><span>确认调用边</span></div>
+          <div class="kernel-sum-item" style="--kernel-accent:var(--pink)" data-ghost="04"><b>${q.critical || 0}/${q.medium || 0}/${q.low || 0}</b><span>开放问题 C/M/L</span></div>
         </div>
         <div class="kernel-grid">
           <div class="kernel-col">
-            <div class="kernel-panel"><h3>子系统进度</h3>${subCards}</div>
-            <div class="kernel-panel"><h3>最近分析</h3><ul class="kernel-list">${recentList}</ul></div>
+            <div class="kernel-panel" style="--kernel-accent:var(--cyan)"><h3>子系统进度</h3>${subCards}</div>
+            <div class="kernel-panel" style="--kernel-accent:var(--blue)"><h3>最近分析</h3><ul class="kernel-list">${recentList}</ul></div>
           </div>
           <div class="kernel-col">
-            <div class="kernel-panel"><h3>开放问题</h3><ul class="kernel-list">${qItems}</ul></div>
-            <div class="kernel-panel"><h3>学习日志</h3><ul class="kernel-list">${journalList}</ul></div>
+            <div class="kernel-panel" style="--kernel-accent:var(--pink)"><h3>开放问题</h3><ul class="kernel-list">${qItems}</ul></div>
+            <div class="kernel-panel" style="--kernel-accent:var(--yellow)"><h3>学习日志</h3><ul class="kernel-list">${journalList}</ul></div>
           </div>
         </div>`;
     } catch (error) {
