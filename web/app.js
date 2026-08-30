@@ -3525,6 +3525,11 @@ function renderKernelChainSVG(canvas, data) {
     loc.setAttribute("font-size", 10); loc.setAttribute("fill", "#8f928f");
     loc.textContent = `${n.file}:${n.line}`;
     g.appendChild(loc);
+    g.style.cursor = "pointer";
+    g.addEventListener("click", () => {
+      $("#kernelGraphQuery").value = n.name;
+      queryKernelChain();
+    });
     svg.appendChild(g);
   });
   wrap.appendChild(svg);
@@ -3593,7 +3598,12 @@ function renderKernelGraphSVG(canvas, data) {
     .attr("font-weight", d => d.root ? 900 : 600)
     .attr("fill", "currentColor")
     .style("paint-order", "stroke").style("stroke", "var(--panel-solid)").style("stroke-width", 3);
-  node.append("title").text(d => `${d.name}\n${d.file}:${d.line}${d.root ? "\n（根节点）" : `\n（${d.depth} 层）`}`);
+  node.append("title").text(d => `${d.name}\n${d.file}:${d.line}${d.root ? "\n（根节点）" : `\n（${d.depth} 层）`}\n点击以该节点为中心重查`);
+  node.on("click", (ev, d) => {
+    ev.stopPropagation();
+    $("#kernelGraphQuery").value = d.name;
+    queryKernelGraph();
+  });
   sim.on("tick", () => {
     link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
     node.attr("transform", d => `translate(${d.x},${d.y})`);

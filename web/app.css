@@ -1299,3 +1299,22 @@ html[data-theme="dark"] .page-kernel-dash {
 .kg-mode { padding: 9px 14px; background: transparent; color: inherit; border: 0; font: 900 11px var(--display); cursor: pointer; }
 .kg-mode.active { color: var(--ink); background: var(--acid); }
 .kg-mode:first-child { border-right: 2px solid color-mix(in srgb, currentColor 55%, transparent); }
+
+.kernel-graph-divider {
+  position: relative; display: flex; align-items: center; gap: 14px;
+  margin: 34px 0 26px; padding: 0;
+}
+.kernel-graph-divider::before {
+  content: ""; flex: 1; height: 2px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, currentColor 40%, transparent), transparent);
+}
+.kernel-graph-divider::after {
+  content: ""; flex: 1; height: 2px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, currentColor 40%, transparent), transparent);
+}
+.kernel-graph-divider-label {
+  padding: 5px 12px; color: var(--ink); background: var(--acid);
+  box-shadow: 3px 3px 0 var(--blue);
+  font: 1000 10px var(--mono); letter-spacing: .16em;
+  transform: rotate(-1deg);
+}
