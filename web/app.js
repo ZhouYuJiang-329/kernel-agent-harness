@@ -908,7 +908,7 @@ function showPage(page) {
   if (page === "styles") loadRecords("style");
   if (page === "monitor") renderMonitor();
   if (page === "news") loadNews();
-  if (page === "kernel-dash") renderKernelDashboard();
+  if (page === "kernel-dash") { renderKernelDashboard(); renderKernelNodes(); renderKernelNotes(); renderKernelQa(); }
 }
 
 async function setMode(mode) {
@@ -3365,6 +3365,9 @@ function bindEvents() {
   });
   $("#kernelDashRefresh").addEventListener("click", async () => {
     await renderKernelDashboard();
+    renderKernelNodes();
+    renderKernelNotes();
+    renderKernelQa();
     toast("仪表盘已刷新");
   });
   $("#kernelGraphGo").addEventListener("click", queryKernelGraph);
@@ -4062,6 +4065,98 @@ async function queryKernelGraph() {
     kernelGraphRemember();
   } catch (error) {
     canvas.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+let kernelNodesFilter = "all";
+let kernelQaFilter = "all";
+
+async function renderKernelNodes() {
+  const panel = $("#kernelNodesPanel");
+  if (!panel) return;
+  panel.innerHTML = '<p class="muted">加载中…</p>';
+  try {
+    const data = await jsonFetch("/api/kernel/nodes", { cache: "no-store" });
+    if (!data?.ok) { panel.innerHTML = `<p class="muted">${escapeHtml(data?.error || "读取失败")}</p>`; return; }
+    const nodes = data.nodes || [];
+    const statusColor = { mastered: "#22c55e", exploring: "#f59e0b", unknown: "#64748b", questioned: "#ef4444" };
+    const filtered = kernelNodesFilter === "all" ? nodes : nodes.filter(n => n.status === kernelNodesFilter);
+    const counts = { all: nodes.length };
+    nodes.forEach(n => { counts[n.status] = (counts[n.status] || 0) + 1; });
+    const btns = ["all", "mastered", "exploring", "unknown", "questioned"].map(s =>
+      `<button class="kernel-filter-btn ${kernelNodesFilter === s ? "active" : ""}" data-nf="${s}">${s === "all" ? "全部" : s} (${counts[s] || 0})</button>`).join("");
+    const rows = filtered.map(n =>
+      `<tr><td><code>${escapeHtml(n.name)}</code></td><td>${escapeHtml(n.subsystem)}</td><td>${escapeHtml(n.type)}</td><td><span class="kernel-status" style="color:${statusColor[n.status] || "#999"}">${escapeHtml(n.status)}</span></td><td>${escapeHtml(n.confidence)}</td><td><small>${escapeHtml(n.note || "-")}</small></td><td>${escapeHtml(n.date)}</td></tr>`).join("");
+    panel.innerHTML = `<div class="kernel-filter-row">${btns}</div>
+      <div class="kernel-table-wrap"><table class="kernel-node-table"><thead><tr><th>名称</th><th>子系统</th><th>类型</th><th>状态</th><th>置信度</th><th>笔记</th><th>更新</th></tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">无节点</td></tr>'}</tbody></table></div>
+      <p class="kernel-table-meta">显示 ${filtered.length} / ${nodes.length} 节点</p>`;
+    panel.querySelectorAll("[data-nf]").forEach(btn => btn.addEventListener("click", () => { kernelNodesFilter = btn.dataset.nf; renderKernelNodes(); }));
+  } catch (error) {
+    panel.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function addKernelNote() {
+  const text = ($("#kernelNoteInput").value || "").trim();
+  if (!text) return;
+  try {
+    await jsonFetch("/api/kernel/quicknotes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add", text }) });
+    renderKernelNotes();
+  } catch (error) { toast(error.message, true); }
+}
+
+async function renderKernelNotes() {
+  const panel = $("#kernelNotesPanel");
+  if (!panel) return;
+  try {
+    const data = await jsonFetch("/api/kernel/quicknotes", { cache: "no-store" });
+    if (!data?.ok) { panel.innerHTML = `<p class="muted">${escapeHtml(data?.error || "读取失败")}</p>`; return; }
+    const notes = data.notes || [];
+    const rows = notes.map(n =>
+      `<div class="kernel-note-row ${n.done ? "done" : ""}">
+        <button class="kernel-note-toggle" data-qn="${escapeHtml(n.id)}" title="完成/恢复">${n.done ? "☑" : "☐"}</button>
+        <span class="kernel-note-text">${escapeHtml(n.text)}</span>
+        <small class="kernel-note-meta">${escapeHtml(n.date)}</small>
+        <button class="kernel-note-del" data-qn="${escapeHtml(n.id)}" title="删除">×</button>
+      </div>`).join("");
+    panel.innerHTML = `<div class="kernel-notes-add"><input id="kernelNoteInput" type="text" placeholder="随手记一条（如：待确认 do_fork 的返回值处理）" spellcheck="false"><button id="kernelNoteAdd" class="mini-cut">添加</button></div>
+      <div class="kernel-notes-list">${rows || '<p class="muted">暂无笔记。</p>'}</div>`;
+    $("#kernelNoteAdd").addEventListener("click", addKernelNote);
+    $("#kernelNoteInput").addEventListener("keydown", e => { if (e.key === "Enter") addKernelNote(); });
+    panel.querySelectorAll("[data-qn]").forEach(btn => btn.addEventListener("click", async () => {
+      const id = btn.dataset.qn;
+      const action = btn.classList.contains("kernel-note-del") ? "delete" : "toggle";
+      try {
+        await jsonFetch("/api/kernel/quicknotes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, id }) });
+        renderKernelNotes();
+      } catch (error) { toast(error.message, true); }
+    }));
+  } catch (error) {
+    panel.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function renderKernelQa() {
+  const panel = $("#kernelQaPanel");
+  if (!panel) return;
+  panel.innerHTML = '<p class="muted">加载中…</p>';
+  try {
+    const data = await jsonFetch("/api/kernel/qa", { cache: "no-store" });
+    if (!data?.ok) { panel.innerHTML = `<p class="muted">${escapeHtml(data?.error || "读取失败")}</p>`; return; }
+    const entries = data.entries || [];
+    const isOpen = e => /待解决|OQ-/i.test(e.conclusion || "");
+    const filtered = kernelQaFilter === "all" ? entries : entries.filter(e => kernelQaFilter === "open" ? isOpen(e) : !isOpen(e));
+    const counts = { all: entries.length, open: entries.filter(isOpen).length, resolved: entries.filter(e => !isOpen(e)).length };
+    const btns = [["all", "全部"], ["open", "待解决"], ["resolved", "已解决"]].map(([v, label]) =>
+      `<button class="kernel-filter-btn ${kernelQaFilter === v ? "active" : ""}" data-qf="${v}">${label} (${counts[v]})</button>`).join("");
+    const cards = filtered.map(e =>
+      `<div class="kernel-qa-card"><div class="kernel-qa-head"><code>${escapeHtml(e.qid)}</code><span>${escapeHtml(e.subsystem)}${e.node ? " / " + escapeHtml(e.node) : ""}</span><small>${escapeHtml(e.date)}</small></div>
+       <p class="kernel-qa-q">${escapeHtml(e.question)}</p>
+       <p class="kernel-qa-c">${escapeHtml(e.conclusion || "")}</p></div>`).join("");
+    panel.innerHTML = `<div class="kernel-filter-row">${btns}</div><div class="kernel-qa-list">${cards || '<p class="muted">暂无问答。</p>'}</div>`;
+    panel.querySelectorAll("[data-qf]").forEach(btn => btn.addEventListener("click", () => { kernelQaFilter = btn.dataset.qf; renderKernelQa(); }));
+  } catch (error) {
+    panel.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }
 }
 

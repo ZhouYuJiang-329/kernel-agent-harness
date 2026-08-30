@@ -1824,6 +1824,118 @@ class BoujoyHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": f"间接调用分析失败: {exc}"}
 
+    def _kernel_nodes(self) -> dict[str, Any]:
+        """全部知识节点列表（来自 03-Knowledge/*/knowledge.md）。"""
+        vault = self.config.vault
+        knowledge_root = vault / "03-Knowledge"
+        nodes: list[dict[str, Any]] = []
+        if knowledge_root.is_dir():
+            for sub_dir in sorted(knowledge_root.iterdir()):
+                if not sub_dir.is_dir():
+                    continue
+                km = sub_dir / "knowledge.md"
+                if not km.is_file():
+                    continue
+                for line in km.read_text("utf-8", errors="replace").splitlines():
+                    if not line.startswith("|") or "---" in line or "名称" in line or "状态" in line:
+                        continue
+                    parts = [p.strip() for p in line.split("|")]
+                    if len(parts) < 8:
+                        continue
+                    nodes.append({
+                        "name": parts[1], "type": parts[2], "status": parts[3],
+                        "confidence": parts[4], "note": parts[5], "internalDoc": parts[6],
+                        "date": parts[7], "subsystem": sub_dir.name,
+                    })
+        return {"ok": True, "nodes": nodes}
+
+    def _kernel_qa(self) -> dict[str, Any]:
+        """全部问答日志（来自 03-Knowledge/*/qa-log.md，按子系统分组）。"""
+        vault = self.config.vault
+        knowledge_root = vault / "03-Knowledge"
+        entries: list[dict[str, Any]] = []
+        if knowledge_root.is_dir():
+            for sub_dir in sorted(knowledge_root.iterdir()):
+                if not sub_dir.is_dir():
+                    continue
+                qa = sub_dir / "qa-log.md"
+                if not qa.is_file():
+                    continue
+                subsystem = sub_dir.name
+                node = qid = source = question = background = conclusion = date = ""
+                current: dict[str, Any] | None = None
+                for line in qa.read_text("utf-8", errors="replace").splitlines():
+                    stripped = line.strip()
+                    m = re.match(r"^## (.+)$", stripped)
+                    if m:
+                        node = m.group(1).strip()
+                        continue
+                    m = re.match(r"^### (Q-\d+)", stripped)
+                    if m:
+                        if current:
+                            entries.append(current)
+                        current = {"qid": m.group(1), "node": node, "source": "", "question": "", "background": "", "conclusion": "", "date": "", "subsystem": subsystem}
+                        continue
+                    if not current:
+                        continue
+                    for key, prefix in (("source", "来源"), ("question", "问题"), ("background", "背景"), ("conclusion", "结论"), ("date", "日期")):
+                        marker = f"**{prefix}**"
+                        if marker in stripped:
+                            current[key] = stripped.split(marker, 1)[-1].strip().lstrip("：:").strip()
+                            break
+                if current:
+                    entries.append(current)
+        return {"ok": True, "entries": entries}
+
+    def _kernel_quicknotes(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """随时记：vault/00-System/Quick-Notes.md 的增删改查。
+        payload None → 读取；否则 {action: add|toggle|delete, ...}。"""
+        notes_file = self.config.vault / "00-System" / "Quick-Notes.md"
+        if not notes_file.is_file():
+            notes_file.write_text("# Quick Notes\n", encoding="utf-8")
+        lines = notes_file.read_text("utf-8", errors="replace").splitlines(keepends=True)
+        pattern = re.compile(r"^- \[( |x)\] (QN-\d+) \| ([\d-]+) \| (.*?)\r?\n?$")
+
+        def parse() -> list[dict[str, Any]]:
+            notes = []
+            for line in lines:
+                m = pattern.match(line)
+                if m:
+                    notes.append({"id": m.group(2), "date": m.group(3), "text": m.group(4), "done": m.group(1) == "x"})
+            return notes
+
+        if payload is None:
+            return {"ok": True, "notes": parse()}
+
+        action = payload.get("action")
+        today = time.strftime("%Y-%m-%d")
+        if action == "add":
+            text = str(payload.get("text", "")).strip()
+            if not text:
+                return {"ok": False, "error": "笔记内容为空"}
+            notes = parse()
+            max_id = max((int(n["id"][3:]) for n in notes), default=0)
+            new_id = f"QN-{max_id + 1:03d}"
+            lines.append(f"- [ ] {new_id} | {today} | {text}\n")
+            notes_file.write_text("".join(lines), encoding="utf-8")
+            return {"ok": True, "note": {"id": new_id, "date": today, "text": text, "done": False}}
+        if action == "toggle":
+            nid = str(payload.get("id", ""))
+            for i, line in enumerate(lines):
+                m = pattern.match(line)
+                if m and m.group(2) == nid:
+                    mark = "x" if m.group(1) == " " else " "
+                    lines[i] = f"- [{mark}] {m.group(2)} | {m.group(3)} | {m.group(4)}\n"
+                    break
+            notes_file.write_text("".join(lines), encoding="utf-8")
+            return {"ok": True}
+        if action == "delete":
+            nid = str(payload.get("id", ""))
+            lines = [line for line in lines if not (pattern.match(line) and pattern.match(line).group(2) == nid)]
+            notes_file.write_text("".join(lines), encoding="utf-8")
+            return {"ok": True}
+        return {"ok": False, "error": f"未知操作 {action}"}
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
@@ -2143,6 +2255,15 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             symbol = query.get("symbol", [""])[0].strip()
             self._json(self._kernel_indirect(symbol))
             return
+        if path == "/api/kernel/nodes":
+            self._json(self._kernel_nodes())
+            return
+        if path == "/api/kernel/qa":
+            self._json(self._kernel_qa())
+            return
+        if path == "/api/kernel/quicknotes":
+            self._json(self._kernel_quicknotes())
+            return
         match = re.fullmatch(r"/api/harness/(knowledge|clean)/(events\.mux|events\.host)", path)
         if match:
             mode, endpoint = match.groups()
@@ -2222,6 +2343,13 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             try:
                 payload = json.loads(body or b"{}")
                 self._json(self._kernel_export(payload))
+            except (ValueError, json.JSONDecodeError) as exc:
+                self._error(400, str(exc))
+            return
+        if path == "/api/kernel/quicknotes":
+            try:
+                payload = json.loads(body or b"{}")
+                self._json(self._kernel_quicknotes(payload))
             except (ValueError, json.JSONDecodeError) as exc:
                 self._error(400, str(exc))
             return
