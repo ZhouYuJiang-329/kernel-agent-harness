@@ -406,16 +406,35 @@ async function rpc(method, payload = {}, mode = state.mode, requestId = null) {
 // Remote commands (such as /permission) use the commands/execute transport.
 // Sending their text as a normal prompt only talks to the model and does not
 // update Harness state, so this path deliberately bypasses session.prompt.
+// NOTE: the engine exposes command RPCs at slash paths (commands/list,
+// commands/execute) — the dot-form methods used by unary HTTP are NOT wired
+// for commands, so the slash must stay un-encoded in the URL.
 async function remoteCommand(line, mode = state.mode) {
   if (!state.sessionId) throw new Error("请先创建会话");
-  const method = "commands/execute";
-  const request = { type: "client-request", rpcId: rpcId(), method, payload: { args: { agentId: state.sessionId, line } } };
-  const response = await jsonFetch(`/api/harness/${mode}/${method}`, {
+  const request = {
+    type: "client-request",
+    rpcId: rpcId(),
+    method: "commands/execute",
+    payload: { args: { agentId: state.sessionId, line, images: [] } },
+  };
+  const response = await jsonFetch(`/api/harness/${mode}/commands/execute`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
   if (response.result?.ok === false) throw new Error(response.result.error?.message || response.result.error || `${line} 失败`);
+  return response.result?.value ?? response.value ?? response;
+}
+
+// Generic remote-service RPC over the slash transport (commands/list etc.).
+async function remoteRpc(endpoint, payload = {}, mode = state.mode) {
+  const request = { type: "client-request", rpcId: rpcId(), method: endpoint, payload };
+  const response = await jsonFetch(`/api/harness/${mode}/${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (response.result?.ok === false) throw new Error(response.result.error?.message || response.result.error || `${endpoint} 失败`);
   return response.result?.value ?? response.value ?? response;
 }
 
@@ -3125,6 +3144,126 @@ function renderCommands(query = "") {
   $("#commandList").innerHTML = items.map((item, index) => `<button type="button" class="command-item" data-command-index="${COMMANDS.indexOf(item)}"><span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.hint)}</small></button>`).join("");
 }
 
+// ── / 斜杠命令：输入框敲 / 弹出引擎命令（/compact 压缩上下文等）──
+const SLASH_CMD_ZH = {
+  compact: "压缩上下文（把早期对话总结成摘要）",
+  goal: "设定 / 查看长任务目标",
+  permission: "切换权限预设（沙箱模式 + 批准策略）",
+  feedback: "记录本次会话反馈",
+  export: "下载会话日志 ZIP",
+  plan: "进入 / 退出计划模式",
+};
+let slashCommandsCache = null;
+let slashMenuIndex = 0;
+
+async function loadSlashCommands(force = false) {
+  if (slashCommandsCache && !force) return slashCommandsCache;
+  try {
+    await ensureSession();
+    const list = await remoteRpc("commands/list", { args: { agentId: state.sessionId } });
+    slashCommandsCache = Array.isArray(list) ? list : [];
+  } catch (error) {
+    slashCommandsCache = [];
+    console.debug("[Boujoy] commands/list failed:", error.message);
+  }
+  return slashCommandsCache;
+}
+
+function slashMenuVisible() {
+  const menu = $("#slashMenu");
+  return !!menu && !menu.classList.contains("hidden");
+}
+
+function updateSlashMenu() {
+  const input = $("#promptInput");
+  const menu = $("#slashMenu");
+  if (!input || !menu) return;
+  const value = input.value;
+  if (!value.startsWith("/") || value.includes("\n")) { closeSlashMenu(); return; }
+  const filter = value.slice(1);
+  void loadSlashCommands().then(cmds => {
+    if ($("#promptInput")?.value !== value) return; // 输入已变化，放弃过期渲染
+    renderSlashMenu(filter);
+  });
+}
+
+function renderSlashMenu(filter = "") {
+  const menu = $("#slashMenu");
+  if (!menu) return;
+  const needle = filter.toLowerCase();
+  const items = (slashCommandsCache || []).filter(cmd => !needle || cmd.name.toLowerCase().startsWith(needle));
+  if (!items.length) {
+    menu.innerHTML = `<div class="slash-menu-empty">没有匹配 “/${escapeHtml(filter)}” 的命令</div>`;
+    menu.classList.remove("hidden");
+    slashMenuIndex = 0;
+    return;
+  }
+  if (slashMenuIndex >= items.length) slashMenuIndex = 0;
+  menu.innerHTML = items.map((cmd, index) => {
+    const zh = SLASH_CMD_ZH[cmd.name] || "";
+    return `<div class="slash-menu-item ${index === slashMenuIndex ? "active" : ""}" data-slash-line="/${escapeHtml(cmd.name)}" data-slash-hint="${escapeHtml(cmd.input?.hint || "")}">
+      <code>/${escapeHtml(cmd.name)}</code><span>${zh ? escapeHtml(zh) : ""}</span><small>${escapeHtml(cmd.description || "")}</small>
+    </div>`;
+  }).join("");
+  menu.classList.remove("hidden");
+}
+
+function closeSlashMenu() {
+  const menu = $("#slashMenu");
+  if (menu) menu.classList.add("hidden");
+  slashMenuIndex = 0;
+}
+
+function slashMenuItems() {
+  const menu = $("#slashMenu");
+  if (!menu) return [];
+  return [...menu.querySelectorAll(".slash-menu-item")];
+}
+
+async function executeSlashCommand(line) {
+  const input = $("#promptInput");
+  closeSlashMenu();
+  if (input) input.value = "";
+  try {
+    await ensureSession();
+    const result = await remoteCommand(line);
+    const outcome = result?.result;
+    const text = outcome?.text || "";
+    if (outcome?.kind === "error" || /^Usage:|^No goal|^No compactable/.test(text)) {
+      toast(text || `${line} 未完成`, true);
+    } else {
+      toast(text || `${line} 完成 ✓`);
+    }
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function navigateSlashMenu(delta) {
+  const items = slashMenuItems();
+  if (!items.length) return;
+  slashMenuIndex = (slashMenuIndex + delta + items.length) % items.length;
+  items.forEach((item, index) => item.classList.toggle("active", index === slashMenuIndex));
+  items[slashMenuIndex]?.scrollIntoView({ block: "nearest" });
+}
+
+function runSlashSelection() {
+  const items = slashMenuItems();
+  const active = items[slashMenuIndex] || items[0];
+  if (!active) return false;
+  const line = active.dataset.slashLine || "";
+  const hint = active.dataset.slashHint || "";
+  const input = $("#promptInput");
+  closeSlashMenu();
+  if (hint) {
+    // 需要参数（/permission <preset> 之类）：把 "/命令 " 放回输入框等用户补全
+    if (input) { input.value = line + " "; input.focus(); }
+    return true;
+  }
+  executeSlashCommand(line);
+  return true;
+}
+
 function bindEvents() {
   document.addEventListener("click", event => {
     const mediaButton = event.target.closest("[data-play-media]");
@@ -3295,8 +3434,15 @@ function bindEvents() {
     // (Chinese/Japanese/Korean) fires keydown with key === "Enter" and must not
     // submit the message. isComposing covers Safari/WKWebView on macOS.
     if (event.isComposing || event.keyCode === 229) return;
+    if (slashMenuVisible()) {
+      if (event.key === "ArrowDown") { event.preventDefault(); navigateSlashMenu(1); return; }
+      if (event.key === "ArrowUp") { event.preventDefault(); navigateSlashMenu(-1); return; }
+      if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); runSlashSelection(); return; }
+      if (event.key === "Escape") { event.preventDefault(); closeSlashMenu(); return; }
+    }
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); }
   });
+  $("#promptInput").addEventListener("input", () => updateSlashMenu());
   $("#sendButton").addEventListener("click", () => sendPrompt());
   // Track user scroll intent on the message stream: scrolling up means "leave
   // my place alone" — stop auto-following until the user returns to bottom.
@@ -3431,6 +3577,21 @@ function bindEvents() {
   document.addEventListener("click", event => {
     const popup = $("#kernelNotePopup");
     if (popup?.classList.contains("open") && !popup.contains(event.target) && event.target !== $("#kernelNoteFab")) toggleKernelNotePopup(false);
+  });
+  $("#slashMenu").addEventListener("click", event => {
+    const item = event.target.closest("[data-slash-line]");
+    if (!item) return;
+    const hint = item.dataset.slashHint || "";
+    const input = $("#promptInput");
+    closeSlashMenu();
+    if (hint) {
+      if (input) { input.value = item.dataset.slashLine + " "; input.focus(); }
+    } else {
+      executeSlashCommand(item.dataset.slashLine);
+    }
+  });
+  document.addEventListener("click", event => {
+    if (slashMenuVisible() && !event.target.closest("#slashMenu") && !event.target.closest("#promptInput")) closeSlashMenu();
   });
   $("#graphCanvas").addEventListener("click", event => { const node = event.target.closest("[data-graph-path]"); if (node) { $("#graphDialog").close(); openReader(node.dataset.graphPath); } });
   $("#healthDetails").addEventListener("click", event => { if (event.target.closest("[data-cleanup-all]")) cleanupReported(); });

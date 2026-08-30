@@ -1475,6 +1475,34 @@ html[data-theme="dark"] .page-kernel-dash {
   color: var(--muted); font: 1000 9px var(--mono); letter-spacing: .14em;
 }
 
+/* ── / 斜杠命令浮层 ── */
+.slash-menu {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px);
+  z-index: 45; max-height: 340px; overflow-y: auto;
+  border: 2px solid var(--ink);
+  background: color-mix(in srgb, var(--panel-solid) 97%, transparent);
+  box-shadow: 6px 6px 0 var(--blue);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+}
+.slash-menu.hidden { display: none; }
+.slash-menu-item {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 9px 14px; cursor: pointer;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+}
+.slash-menu-item:last-child { border-bottom: 0; }
+.slash-menu-item:hover { background: color-mix(in srgb, var(--cyan) 10%, transparent); }
+.slash-menu-item.active { background: var(--acid); color: var(--ink); }
+.slash-menu-item code { flex: none; font: 900 12px var(--mono); color: var(--cyan); }
+.slash-menu-item.active code { color: var(--ink); }
+.slash-menu-item span { flex: 1; min-width: 0; font-size: 12px; color: inherit; }
+.slash-menu-item small {
+  flex: none; max-width: 46%; color: var(--muted); font-size: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.slash-menu-item.active small { color: color-mix(in srgb, var(--ink) 72%, transparent); }
+.slash-menu-empty { padding: 10px 14px; color: var(--muted); font-size: 12px; }
+
 /* ── 内核学习：学习文档 ── */
 .kernel-docs-layout {
   display: grid; grid-template-columns: 250px minmax(0, 1fr);
