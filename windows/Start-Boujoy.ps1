@@ -1,4 +1,4 @@
-# Boujoy Harness Windows local host.
+﻿# Boujoy Harness Windows local host.
 # This script intentionally owns the local Python gateway and both DeepSeek
 # Harness modes. It does not alter the web UI; Edge/Chrome render the exact
 # same product page served at http://127.0.0.1:8766.
@@ -307,6 +307,25 @@ function Start-BoujoyServices {
         "DSH_TELEMETRY_DISABLED" = "1"
         "PATH" = $Layout.NodeDirectory + ";" + $env:PATH
     }
+
+    # Phone access: the gateway binds 0.0.0.0 only when an access code exists,
+    # so generate a 6-digit PIN once, persist it next to the desktop file the
+    # UI tells the user to read, and reuse it across restarts (the phone
+    # remembers it after the first pairing).
+    $accessCodeFile = Join-Path ([Environment]::GetFolderPath("Desktop")) "Boujoy-访问码.txt"
+    $accessCode = ""
+    if (Test-Path -LiteralPath $accessCodeFile) {
+        $accessCode = (Get-Content -LiteralPath $accessCodeFile -Raw -ErrorAction SilentlyContinue).Trim()
+    }
+    if (-not $accessCode) {
+        $accessCode = -join ((1..6) | ForEach-Object { Get-Random -Minimum 0 -Maximum 10 })
+        try {
+            Set-Content -LiteralPath $accessCodeFile -Value $accessCode -Encoding UTF8 -ErrorAction Stop
+        } catch {
+            Write-BoujoyHostLog "WARN: 无法写入 $accessCodeFile，手机访问将不可用（网关保持回环绑定）。"
+            $accessCode = ""
+        }
+    }
     try {
         $knowledgeEnvironment = @{} + $commonEnvironment
         $knowledgeEnvironment["DSH_HOME"] = $Layout.KnowledgeHome
@@ -324,9 +343,11 @@ function Start-BoujoyServices {
             -Environment $cleanEnvironment -StateDirectory $script:StateDirectory))
 
         $gatewayEnvironment = @{ "PYTHONDONTWRITEBYTECODE" = "1"; "BOUJOY_DEBUG" = "0" }
+        $gatewayArgs = @($Layout.Gateway, "--port", "8876", "--vault", $Layout.Vault, "--static", $Layout.Static,
+            "--knowledge-home", $Layout.KnowledgeHome, "--clean-home", $Layout.CleanHome, "--restart-file", $script:RestartFile)
+        if ($accessCode) { $gatewayArgs += @("--access-code", $accessCode) }
         $children.Add((Start-BoujoyChild -Name "gateway" -FilePath $Layout.Python `
-            -Arguments @($Layout.Gateway, "--port", "8876", "--vault", $Layout.Vault, "--static", $Layout.Static,
-                "--knowledge-home", $Layout.KnowledgeHome, "--clean-home", $Layout.CleanHome, "--restart-file", $script:RestartFile) `
+            -Arguments $gatewayArgs `
             -WorkingDirectory $Layout.Static -Environment $gatewayEnvironment -StateDirectory $script:StateDirectory))
 
         Wait-BoujoyEndpoint -Label "Knowledge Harness" -Url "http://127.0.0.1:3280/"
