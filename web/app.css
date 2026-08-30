@@ -1195,8 +1195,31 @@ dialog::backdrop { background: rgba(3,4,7,.74); backdrop-filter: blur(8px); }
 .code-block pre { margin: 0; padding: 12px; overflow-x: auto; }
 
 
+
+/* 页面级布局：.page.active 是 flex row，必须转 column 才垂直堆叠 */
+.page-kernel-dash {
+  position: relative;
+  isolation: isolate;
+  display: none;
+  flex-direction: column;
+  padding: clamp(30px,3.7vw,52px) clamp(28px,4vw,58px) 60px;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 85% 8%, rgba(255,43,139,.14), transparent 24%),
+    linear-gradient(151deg, rgba(36,57,255,.13) 0 25%, transparent 25.2%),
+    rgba(245,238,224,.97);
+}
+html[data-theme="dark"] .page-kernel-dash {
+  color: var(--paper);
+  background:
+    radial-gradient(circle at 85% 8%, rgba(255,43,139,.10), transparent 24%),
+    linear-gradient(151deg, rgba(36,57,255,.09) 0 25%, transparent 25.2%),
+    #090c11;
+}
+.page-kernel-dash.active { display: flex; }
+.page-kernel-dash .monitor-hero::after { content: "07 / KERNEL LEARN"; }
 /* ── kernel learning dashboard（内核版专属）────────────────────────── */
-.kernel-dash-content { padding: 0 28px 44px; }
+.kernel-dash-content { padding: 0; }
 
 .kernel-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
 @media (max-width: 900px) { .kernel-summary { grid-template-columns: repeat(2, 1fr); } }
