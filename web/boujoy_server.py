@@ -1235,6 +1235,121 @@ class BoujoyHandler(BaseHTTPRequestHandler):
     def _deny_access(self) -> None:
         self._error(401, "需要访问码（Boujoy Access Code）")
 
+    # ── 内核学习仪表盘数据（kernel-agent-harness 专属）───────────────────
+    # 聚合 vault 里的内核知识库：子系统进度、节点状态、依赖图规模、问答数、
+    # 最近分析、开放问题、学习日志。全部从 Markdown 文件实时解析，无缓存。
+
+    @staticmethod
+    def _parse_node_table(text: str) -> tuple[dict[str, int], list[int]]:
+        """解析 knowledge.md 节点表：返回状态计数和置信度列表（>0）。"""
+        counts = {"mastered": 0, "exploring": 0, "unknown": 0, "questioned": 0}
+        confs: list[int] = []
+        for line in text.splitlines():
+            if not line.startswith("|") or "---" in line or "名称" in line or "状态" in line:
+                continue
+            parts = [p.strip() for p in line.split("|")]
+            # | 名称 | 类型 | 状态 | 置信度 | 笔记 | ... | 日期 |
+            if len(parts) < 5:
+                continue
+            status = parts[3].lower()
+            if status in counts:
+                counts[status] += 1
+            conf = parts[4]
+            if conf.isdigit() and int(conf) > 0:
+                confs.append(int(conf))
+        return counts, confs
+
+    @staticmethod
+    def _count_tree_edges(text: str) -> int:
+        """统计 dep-graph.md 代码块内的调用边（├── / └── 行）。"""
+        return sum(1 for line in text.splitlines() if "├──" in line or "└──" in line)
+
+    def _kernel_stats(self) -> dict[str, Any]:
+        vault = self.config.vault
+        knowledge_root = vault / "03-Knowledge"
+        system_root = vault / "00-System"
+
+        subsystems: list[dict[str, Any]] = []
+        if knowledge_root.is_dir():
+            for sub_dir in sorted(knowledge_root.iterdir()):
+                if not sub_dir.is_dir():
+                    continue
+                name = sub_dir.name
+                km = sub_dir / "knowledge.md"
+                if not km.is_file():
+                    continue
+                km_text = km.read_text("utf-8", errors="replace")
+                counts, confs = self._parse_node_table(km_text)
+                dg = sub_dir / "dep-graph.md"
+                edges = self._count_tree_edges(dg.read_text("utf-8", errors="replace")) if dg.is_file() else 0
+                qa = sub_dir / "qa-log.md"
+                qa_count = 0
+                if qa.is_file():
+                    qa_count = sum(1 for line in qa.read_text("utf-8", errors="replace").splitlines()
+                                   if line.startswith("### Q-"))
+                avg_conf = round(sum(confs) / len(confs), 1) if confs else "-"
+                subsystems.append({
+                    "name": name,
+                    "nodes": sum(counts.values()),
+                    "mastered": counts["mastered"],
+                    "exploring": counts["exploring"],
+                    "unknown": counts["unknown"],
+                    "questioned": counts["questioned"],
+                    "avgConf": avg_conf,
+                    "edges": edges,
+                    "qa": qa_count,
+                })
+
+        # 最近分析（Memory-Index.md "最近 5 个分析" 节）
+        recent: list[dict[str, str]] = []
+        mi = system_root / "Memory-Index.md"
+        if mi.is_file():
+            in_recent = False
+            for line in mi.read_text("utf-8", errors="replace").splitlines():
+                if "最近" in line and "分析" in line:
+                    in_recent = True
+                    continue
+                if in_recent:
+                    if line.startswith("## "):
+                        break
+                    m = re.match(r"^- `(.+?)` \(([^,]+),\s*([\d-]+)\)", line.strip())
+                    if m:
+                        recent.append({"func": m.group(1), "subsystem": m.group(2).strip(), "date": m.group(3)})
+
+        # 开放问题统计
+        questions = {"critical": 0, "medium": 0, "low": 0, "items": []}
+        oq = system_root / "Open-Questions.md"
+        if oq.is_file():
+            oq_text = oq.read_text("utf-8", errors="replace")
+            questions["critical"] = len(re.findall(r"^### OQ-.*CRITICAL", oq_text, re.M))
+            questions["medium"] = len(re.findall(r"^### OQ-.*MEDIUM", oq_text, re.M))
+            questions["low"] = len(re.findall(r"^### OQ-.*LOW", oq_text, re.M))
+            for m in re.finditer(r"^### (OQ-\d+)（(\w+)）\s*\n- \*\*问题\*\*：(.+)", oq_text, re.M):
+                questions["items"].append({"id": m.group(1), "priority": m.group(2), "question": m.group(3).strip()})
+
+        # 学习日志最近条目
+        journal: list[dict[str, str]] = []
+        lj = system_root / "Learning-Journal.md"
+        if lj.is_file():
+            current_date = ""
+            for line in lj.read_text("utf-8", errors="replace").splitlines():
+                m = re.match(r"^## (\d{4}-\d{2}-\d{2})", line.strip())
+                if m:
+                    current_date = m.group(1)
+                    journal.append({"date": current_date, "summary": ""})
+                    continue
+                if current_date and journal and not journal[-1]["summary"] and line.strip():
+                    journal[-1]["summary"] = line.strip().strip("**").strip("：").strip()[:80]
+
+        return {
+            "ok": True,
+            "vault": vault.name,
+            "subsystems": subsystems,
+            "recent": recent,
+            "questions": questions,
+            "journal": journal[:6],
+        }
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
@@ -1504,6 +1619,9 @@ class BoujoyHandler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "records": self._list_records(kind)})
             except ValueError as exc:
                 self._error(400, str(exc))
+            return
+        if path == "/api/kernel/stats":
+            self._json(self._kernel_stats())
             return
         match = re.fullmatch(r"/api/harness/(knowledge|clean)/(events\.mux|events\.host)", path)
         if match:

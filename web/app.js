@@ -76,6 +76,7 @@ const PAGE_META = {
   styles: ["VOICE / 04", "风格 输出声线"],
   monitor: ["GAUGE / 05", "运行监控"],
   news: ["FEED / 06", "AI 新闻与工具"],
+  "kernel-dash": ["KERNEL / 07", "内核学习 仪表盘"],
 };
 
 const KIND_META = {
@@ -907,6 +908,7 @@ function showPage(page) {
   if (page === "styles") loadRecords("style");
   if (page === "monitor") renderMonitor();
   if (page === "news") loadNews();
+  if (page === "kernel-dash") renderKernelDashboard();
 }
 
 async function setMode(mode) {
@@ -3361,6 +3363,10 @@ function bindEvents() {
     btn.disabled = false;
     btn.textContent = "↻ 刷新爬取";
   });
+  $("#kernelDashRefresh").addEventListener("click", async () => {
+    await renderKernelDashboard();
+    toast("仪表盘已刷新");
+  });
   $("#graphCanvas").addEventListener("click", event => { const node = event.target.closest("[data-graph-path]"); if (node) { $("#graphDialog").close(); openReader(node.dataset.graphPath); } });
   $("#healthDetails").addEventListener("click", event => { if (event.target.closest("[data-cleanup-all]")) cleanupReported(); });
   $("#addExpertButton").addEventListener("click", () => openRecordDialog("expert"));
@@ -3430,6 +3436,66 @@ async function init() {
 function monitorSessionLabel() {
   const session = state.sessions.find(item => item.id === state.sessionId);
   return session ? sessionTitle(session) : "未选择会话";
+}
+
+function renderKernelDashboard() {
+  const content = $("#kernelDashContent");
+  if (!content) return;
+  content.innerHTML = '<p class="muted">加载中…</p>';
+  (async () => {
+    try {
+      const data = await jsonFetch("/api/kernel/stats", { cache: "no-store" });
+      if (!data?.ok) throw new Error("内核统计接口未就绪");
+      const subs = data.subsystems || [];
+      const totalNodes = subs.reduce((s, x) => s + (x.nodes || 0), 0);
+      const totalEdges = subs.reduce((s, x) => s + (x.edges || 0), 0);
+      const q = data.questions || {};
+
+      const subCards = subs.map(sub => {
+        const total = Math.max(sub.nodes || 1, 1);
+        const segs = [
+          [sub.mastered, "#22c55e", "mastered"],
+          [sub.exploring, "#f59e0b", "exploring"],
+          [sub.unknown, "#64748b", "unknown"],
+          [sub.questioned, "#ef4444", "questioned"],
+        ].filter(([n]) => n > 0).map(([n, c, label]) => `<span style="width:${(n / total * 100).toFixed(1)}%;background:${c}" title="${label} ${n}"></span>`).join("");
+        return `<div class="kernel-sub-card">
+          <div class="kernel-sub-head"><strong>${escapeHtml(sub.name)}</strong><small>${sub.nodes} 节点 · ${sub.edges} 边 · ${sub.qa} 问答</small></div>
+          <div class="kernel-sub-bar">${segs || '<span style="width:100%;background:#334155"></span>'}</div>
+          <div class="kernel-sub-stats">
+            <span>m <b>${sub.mastered}</b></span><span>e <b>${sub.exploring}</b></span><span>u <b>${sub.unknown}</b></span><span>q <b>${sub.questioned}</b></span>
+            <span class="kernel-avg">平均置信度 <b>${sub.avgConf}</b></span>
+          </div>
+        </div>`;
+      }).join("") || '<p class="muted">暂无子系统。可用 init_module.py 初始化第一个子系统。</p>';
+
+      const recentList = (data.recent || []).map(r => `<li><code>${escapeHtml(r.func)}</code> <span class="muted">${escapeHtml(r.subsystem)} · ${escapeHtml(r.date)}</span></li>`).join("") || '<li class="muted">暂无分析记录</li>';
+
+      const qItems = (q.items || []).slice(0, 4).map(i => `<li><code>${escapeHtml(i.id)}</code> [${escapeHtml(i.priority)}] ${escapeHtml(i.question)}</li>`).join("") || '<li class="muted">暂无开放问题</li>';
+
+      const journalList = (data.journal || []).map(j => `<li><b>${escapeHtml(j.date)}</b> <span class="muted">${escapeHtml(j.summary || "…")}</span></li>`).join("") || '<li class="muted">暂无日志</li>';
+
+      content.innerHTML = `
+        <div class="kernel-summary">
+          <div class="kernel-sum-item"><b>${subs.length}</b><span>子系统</span></div>
+          <div class="kernel-sum-item"><b>${totalNodes}</b><span>知识节点</span></div>
+          <div class="kernel-sum-item"><b>${totalEdges}</b><span>确认调用边</span></div>
+          <div class="kernel-sum-item"><b>${q.critical || 0}/${q.medium || 0}/${q.low || 0}</b><span>开放问题 C/M/L</span></div>
+        </div>
+        <div class="kernel-grid">
+          <div class="kernel-col">
+            <div class="kernel-panel"><h3>子系统进度</h3>${subCards}</div>
+            <div class="kernel-panel"><h3>最近分析</h3><ul class="kernel-list">${recentList}</ul></div>
+          </div>
+          <div class="kernel-col">
+            <div class="kernel-panel"><h3>开放问题</h3><ul class="kernel-list">${qItems}</ul></div>
+            <div class="kernel-panel"><h3>学习日志</h3><ul class="kernel-list">${journalList}</ul></div>
+          </div>
+        </div>`;
+    } catch (error) {
+      content.innerHTML = `<div class="setting-card"><strong>读取失败</strong><small>${escapeHtml(error.message)}</small></div>`;
+    }
+  })();
 }
 
 function renderMonitor() {

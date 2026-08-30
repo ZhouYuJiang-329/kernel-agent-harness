@@ -33,6 +33,7 @@
         <button class="nav-cut" data-page="styles"><span class="nav-number">04</span><strong>风格</strong><small>输出声线</small></button>
         <button class="nav-cut" data-page="monitor"><span class="nav-number">05</span><strong>监控</strong><small>用量与轨迹</small></button>
         <button class="nav-cut" data-page="news"><span class="nav-number">06</span><strong>新闻</strong><small>AI 动态与工具</small></button>
+        <button class="nav-cut" data-page="kernel-dash"><span class="nav-number">07</span><strong>内核学习</strong><small>仪表盘</small></button>
       </nav>
 
       <div class="rail-footer">
@@ -267,6 +268,14 @@
             <div id="toolsList" class="news-list"><p class="muted">主流模型与工具更新将显示在这里。</p></div>
           </div>
         </div>
+      </section>
+
+      <section id="kernelDashPage" class="page page-kernel-dash" data-page-panel="kernel-dash">
+        <div class="monitor-hero">
+          <div><p class="section-kicker">KERNEL LEARNING / DASHBOARD</p><h2>内核知识，<br><span>一眼看全。</span></h2><p>子系统进度、节点状态、依赖图规模与开放问题，来自 vault 实时统计。</p></div>
+          <button id="kernelDashRefresh" class="mini-cut">↻ 刷新</button>
+        </div>
+        <div id="kernelDashContent" class="kernel-dash-content"><p class="muted">加载中…</p></div>
       </section>
     </main>
   </div>
