@@ -138,7 +138,7 @@
 
 | 名称 | 类型 | 状态 | 置信度 | 笔记 | 内部文档 | 更新日期 |
 |---|---|---|---:|---|---|---|
-| task_struct | struct | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
+| task_struct | struct | exploring | 70 | 07-Learn/sched/task_struct.md | - | 2026-08-30 |
 | sched_class | struct | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | sched_entity | struct | unknown | 0 | 07-Learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | sched_rt_entity | struct | unknown | 0 | - | - | 2026-08-28 |

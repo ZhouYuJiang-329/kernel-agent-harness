@@ -37,4 +37,17 @@ enqueue_task_fair
   ├── update_load_avg (更新负载均值（PELT）)
   ├── check_update_overutilized_status (标记 CPU 过载状态)
   └── add_nr_running (更新运行队列可运行计数)
+
+kernel_clone
+  └── copy_process (fork/clone 系统调用主入口，创建新任务)
+    └── dup_task_struct (复制父 task_struct 并分配内核栈（fork.c:2115 调用）)
+
+fork_idle
+  └── copy_process (CPU 热插拔时创建 per-CPU idle 线程)
+
+create_io_thread
+  └── copy_process (io_uring 内核线程创建)
+
+vhost_task_create
+  └── copy_process (vhost 任务线程创建)
 ```

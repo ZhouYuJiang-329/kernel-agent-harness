@@ -3,6 +3,29 @@
 ## 2026-08-28
 
 **学习内容**：
+- 深度分析 `struct task_struct`（include/linux/sched.h:826-1670）：八个功能域字段分组（现场/调度核心/身份族谱/资源/统计/同步/退出/子系统挂钩）、`__state` 状态机（TASK_* 宏 + set_current_state 内存序规则）、双引用计数（usage/rcu_users）、current 宏（per-cpu current_task）、布局随机化（randomized_struct_fields_start）。
+- 确认 task_struct 创建路径：`kernel_clone`/`fork_idle`/`create_io_thread`/`vhost_task_create` → `copy_process`（fork.c:1994）→ `dup_task_struct`（fork.c:914，fork.c:2115 调用）。
+- 修复 `update_memory.py` 脚本 bug（`oq_file` → `OQ_FILE`，两处），使捕获流水线第 7 步可用。
+
+**新增笔记**：
+- `07-Learn/sched/task_struct.md`
+
+**知识状态变化**：
+- `task_struct`：unknown → exploring（置信度 70），`03-Knowledge/sched/knowledge.md` 骨架节点升级为深度节点。
+- dep-graph.md 新增 fork 创建树：`kernel_clone`/`fork_idle`/`create_io_thread`/`vhost_task_create` → `copy_process` → `dup_task_struct`。
+
+**新增开放问题**：
+- OQ-002（MEDIUM）：task_struct 布局随机化的 GCC plugin 机制如何工作？
+
+**问答归档**：
+- Q-001：task_struct 组织方式、生命周期与状态机（03-Knowledge/sched/qa-log.md）
+
+**下次建议**：
+- 沿创建路径深化 `copy_process` 的逐域复制（copy_mm/copy_files/copy_signal），或回到调度主路径分析 `__schedule`（core.c:7061）。
+
+## 2026-08-28
+
+**学习内容**：
 - 为"进程调度器"建立学习板块：基于 Linux 7.2-rc6 源码，用 kernel-graph MCP 确认了调度器核心 API/结构体的真实位置。
 - 生成阅读指南 `07-Learn/sched/sched_read_guide.md`（11 个分类 + 关键数据结构主线 + 阅读顺序 + API 检索表）。
 - 初始化调度器依赖图骨架：`__schedule` / `pick_next_task` / `try_to_wake_up` / `context_switch` / `enqueue_task_fair` 五条主线的直接调用边。
