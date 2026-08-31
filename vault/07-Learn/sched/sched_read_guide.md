@@ -117,20 +117,59 @@
 
 ### 分类四：RT 实时调度（rt.c）
 
+**版本差异提示**：`rt_sched_class` 由宏 `DEFINE_SCHED_CLASS(rt)` 在 `rt.c:2601` 展开定义（文档早期版本标注 2602 为字段起始行）。`wakeup_preempt_rt` 使用 `rq->donor`（core scheduling 概念）而非 `rq->curr`。push 除唤醒路径外，还通过 `rto_push_irq_work_func`（irq_work）异步触发。
+
 **阅读目标**：
-1. RT 任务如何按 `MAX_RT_PRIO`（100）级优先级数组 `rt_prio_array` 组织？SCHED_FIFO 与 SCHED_RR 的区别？
-2. `enqueue_task_rt` / `pick_next_rt_entity` 如何选择最高优先级任务？
-3. RT 的 `task_tick_rt` 如何处理 SCHED_RR 的时间片轮转？
-4. RT 负载均衡的 push/pull 机制（`pushable_tasks` plist）解决什么问题？
+1. RT 任务如何按 `MAX_RT_PRIO`（100）级优先级数组 `rt_prio_array`（`queue[MAX_RT_PRIO]` 的 `list_head` 数组）组织？SCHED_FIFO 与 SCHED_RR 的区别？
+2. 入队全链路：`enqueue_task_rt` → `enqueue_rt_entity` → `__enqueue_rt_entity` 如何把任务挂到对应优先级链表，并同步维护 `inc_rt_prio` / `inc_rt_tasks` 计数与 pushable plist（`enqueue_pushable_task`）？
+3. 选任务全链路：`pick_task_rt` / `_pick_next_task_rt` / `pick_next_rt_entity` 如何选最高优先级任务？`put_prev_task_rt` / `set_next_task_rt` 两个钩子分别做什么？
+4. SCHED_RR 时间片：`task_tick_rt` 如何递减 `sched_rt_entity.time_slice`、到期后放到队尾？`get_rr_interval_rt` 的时间片长度从哪来（`sched_rr_timeslice`）？`yield_task_rt` 让出时如何排到队尾？
+5. 唤醒抢占：`wakeup_preempt_rt` 为何只在更高优先级时 `resched_curr`？`check_preempt_equal_prio` 如何应对"等优先级 + 当前可迁移/新任务不可迁移"场景（触发 push 让出 CPU）？`select_task_rq_rt` 如何选目标 CPU？
+6. push/pull 负载均衡（RT 特有，解决"空闲 CPU 饿死高优先级任务"）：`task_woken_rt`（唤醒后）与 `balance_rt`（运行时）分别在什么时机触发 `push_rt_tasks` / `pull_rt_task`？`pushable_tasks` plist、`pick_highest_pushable_task` / `pick_next_pushable_task`、`find_lowest_rq` 如何配合？overload 标记（`rt_set_overload` / `rt_overloaded`）如何跨 CPU 传播，`tell_cpu_to_push` + `rto_push_irq_work_func` 怎么异步通知远端？
+7. RT 带宽控制（throttling）：`sched_rt_runtime_exceeded` / `rt_rq_throttled` / `do_sched_rt_period_timer` 如何限制 RT 任务占用带宽、防止饿死 CFS？（`rt_se_boosted` 涉及 rtmutex 优先级继承）
+8. `DEFINE_SCHED_CLASS(rt)` 分发表（rt.c:2601）各回调字段如何映射到 rt.c 各函数？`switched_to_rt` / `switched_from_rt` / `prio_changed_rt` 在策略/优先级切换时做什么？
 
 **关键源文件**：
 
 | 文件 | 行号 | 重点关注 |
 |------|------|---------|
-| kernel/sched/rt.c | 1435 | `enqueue_task_rt()` RT 入队 |
+| kernel/sched/rt.c | 1435 | `enqueue_task_rt()` RT 入队入口 |
+| kernel/sched/rt.c | 1331 | `__enqueue_rt_entity()` 实际挂入 rt_prio_array 链表 |
+| kernel/sched/rt.c | 1403 | `enqueue_rt_entity()` 实体级入队（含 pushable 维护） |
+| kernel/sched/rt.c | 1455 | `dequeue_task_rt()` RT 出队入口 |
 | kernel/sched/rt.c | 1682 | `pick_next_rt_entity()` 选最高优先级实体 |
+| kernel/sched/rt.c | 1700 | `_pick_next_task_rt()` pick 循环内部实现 |
+| kernel/sched/rt.c | 1715 | `pick_task_rt()` 调度类 pick 回调 |
+| kernel/sched/rt.c | 1656 | `set_next_task_rt()` 设定下一个任务 |
+| kernel/sched/rt.c | 1727 | `put_prev_task_rt()` 放回上一个任务 |
 | kernel/sched/rt.c | 974 | `update_curr_rt()` RT 运行时间更新 |
-| kernel/sched/rt.c | 2602 | `rt_sched_class` 定义（.task_tick = task_tick_rt） |
+| kernel/sched/rt.c | 1079 | `inc_rt_prio()` 维护 RT 优先级计数（dec 在 1090） |
+| kernel/sched/rt.c | 397 | `enqueue_pushable_task()` pushable plist 入队（dequeue 在 413） |
+| kernel/sched/rt.c | 2540 | `task_tick_rt()` RR 时间片轮转（SCHED_FIFO 不递减） |
+| kernel/sched/rt.c | 2574 | `get_rr_interval_rt()` RR 时间片长度 |
+| kernel/sched/rt.c | 1496 | `yield_task_rt()` 让出 CPU，排到队尾 |
+| kernel/sched/rt.c | 1625 | `wakeup_preempt_rt()` 唤醒抢占判断 |
+| kernel/sched/rt.c | 1576 | `check_preempt_equal_prio()` 等优先级抢占处理 |
+| kernel/sched/rt.c | 1503 | `select_task_rq_rt()` RT 目标 CPU 选择 |
+| kernel/sched/rt.c | 2373 | `task_woken_rt()` 唤醒后触发 push |
+| kernel/sched/rt.c | 2077 | `push_rt_tasks()` 把任务推给空闲/低优先级 CPU |
+| kernel/sched/rt.c | 1959 | `push_rt_task()` 单个任务推送核心 |
+| kernel/sched/rt.c | 1756 | `pick_highest_pushable_task()` 选可推送的最高优先级任务 |
+| kernel/sched/rt.c | 1774 | `find_lowest_rq()` 找最低负载/优先级最低 CPU（锁版在 1896） |
+| kernel/sched/rt.c | 1599 | `balance_rt()` 运行时均衡（pull 触发点） |
+| kernel/sched/rt.c | 2260 | `pull_rt_task()` 拉取高优先级任务 |
+| kernel/sched/rt.c | 333 | `need_pull_rt_task()` 是否需要 pull 判断 |
+| kernel/sched/rt.c | 339 | `rt_overloaded()` RT overload 判断（set/clear 在 344/363） |
+| kernel/sched/rt.c | 2189 | `tell_cpu_to_push()` irq_work 通知远端 push |
+| kernel/sched/rt.c | 2223 | `rto_push_irq_work_func()` 异步 push 执行体 |
+| kernel/sched/rt.c | 863 | `sched_rt_runtime_exceeded()` RT 带宽超限检查 |
+| kernel/sched/rt.c | 778 | `do_sched_rt_period_timer()` RT 周期定时器（重放 runtime） |
+| kernel/sched/rt.c | 564 | `rt_rq_throttled()` RT 队列限流状态 |
+| kernel/sched/rt.c | 569 | `rt_se_boosted()` RT 优先级提升（rtmutex 继承） |
+| kernel/sched/rt.c | 2442 | `switched_to_rt()` 切换为 RT 策略 |
+| kernel/sched/rt.c | 2470 | `prio_changed_rt()` 优先级改变处理 |
+| kernel/sched/rt.c | 2601 | `DEFINE_SCHED_CLASS(rt)` rt_sched_class 分发表 |
+| include/linux/sched.h | 623 | `struct sched_rt_entity`（time_slice / run_list / on_rq） |
 | include/linux/sched/prio.h | 16 | `MAX_RT_PRIO 100` 优先级常量 |
 
 **已有学习笔记**：无。
@@ -365,9 +404,31 @@
 | select_task_rq_fair | - | kernel/sched/fair.c | 9543 | CFS 目标 CPU |
 | wake_affine | - | kernel/sched/fair.c | 8274 | 唤醒亲和性 |
 | select_idle_sibling | - | kernel/sched/fair.c | 8800 | 找空闲兄弟 CPU |
-| enqueue_task_rt | - | kernel/sched/rt.c | 1435 | RT 入队 |
-| pick_next_rt_entity | - | kernel/sched/rt.c | 1682 | 选最高优先级 RT |
-| update_curr_rt | - | kernel/sched/rt.c | 974 | RT 时间更新 |
+| enqueue_task_rt | - | kernel/sched/rt.c | 1435 | RT 入队入口 |
+| __enqueue_rt_entity | - | kernel/sched/rt.c | 1331 | 实际挂入 rt_prio_array 链表 |
+| enqueue_rt_entity | - | kernel/sched/rt.c | 1403 | 实体级入队（含 pushable 维护） |
+| dequeue_task_rt | - | kernel/sched/rt.c | 1455 | RT 出队入口 |
+| pick_next_rt_entity | - | kernel/sched/rt.c | 1682 | 选最高优先级 RT 实体 |
+| pick_task_rt | - | kernel/sched/rt.c | 1715 | RT 调度类 pick 回调 |
+| _pick_next_task_rt | - | kernel/sched/rt.c | 1700 | pick 循环内部实现 |
+| set_next_task_rt | - | kernel/sched/rt.c | 1656 | RT 设定下一任务 |
+| put_prev_task_rt | - | kernel/sched/rt.c | 1727 | RT 放回前一任务 |
+| update_curr_rt | - | kernel/sched/rt.c | 974 | RT 运行时间更新 |
+| task_tick_rt | - | kernel/sched/rt.c | 2540 | RR 时间片轮转 |
+| get_rr_interval_rt | - | kernel/sched/rt.c | 2574 | RR 时间片长度 |
+| yield_task_rt | - | kernel/sched/rt.c | 1496 | RT 让出 CPU |
+| wakeup_preempt_rt | - | kernel/sched/rt.c | 1625 | RT 唤醒抢占 |
+| check_preempt_equal_prio | - | kernel/sched/rt.c | 1576 | 等优先级抢占处理 |
+| select_task_rq_rt | - | kernel/sched/rt.c | 1503 | RT 目标 CPU 选择 |
+| task_woken_rt | - | kernel/sched/rt.c | 2373 | 唤醒后触发 push |
+| push_rt_tasks | - | kernel/sched/rt.c | 2077 | RT push 负载均衡 |
+| push_rt_task | - | kernel/sched/rt.c | 1959 | 单个 RT 任务推送 |
+| pull_rt_task | - | kernel/sched/rt.c | 2260 | RT pull 负载均衡 |
+| balance_rt | - | kernel/sched/rt.c | 1599 | RT 运行时均衡（pull 触发点） |
+| find_lowest_rq | - | kernel/sched/rt.c | 1774 | 找最低负载 CPU（锁版 1896） |
+| rt_sched_class | - | kernel/sched/rt.c | 2601 | RT 调度类分发表（DEFINE_SCHED_CLASS 宏） |
+| sched_rt_entity | - | include/linux/sched.h | 623 | RT 调度实体 |
+| rt_prio_array | - | kernel/sched/sched.h | 311 | RT 优先级数组 |
 | enqueue_task_dl | - | kernel/sched/deadline.c | 2486 | DL 入队 |
 | update_curr_dl | - | kernel/sched/deadline.c | 2129 | DL runtime 消耗 |
 | pick_next_dl_entity | - | kernel/sched/deadline.c | 2801 | 选最早截止 DL |
